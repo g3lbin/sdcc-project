@@ -1,0 +1,20 @@
+networks:
+  my_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.5.0.0/24
+          gateway: 10.5.0.1
+ 
+services:
+  registry:
+    build: registry_service
+    networks:
+      my_net:
+        ipv4_address: 10.5.0.2
+    ports:
+      - ${REGISTRY_PORT}
+  peer:
+    build: peer_service
+    networks:
+      - my_net
