@@ -1,20 +1,17 @@
 networks:
   my_net:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 10.5.0.0/24
-          gateway: 10.5.0.1
  
 services:
+  peer:
+    build: peer_service
+    depends_on:
+      - "registry"
+    networks:
+      - my_net
   registry:
     build: registry_service
     networks:
-      my_net:
-        ipv4_address: 10.5.0.2
+      - my_net
     ports:
       - ${REGISTRY_PORT}
-  peer:
-    build: peer_service
-    networks:
-      - my_net

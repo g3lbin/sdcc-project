@@ -1,15 +1,14 @@
 FROM golang:1.16-alpine
 
-RUN export GOPATH=$(go env GOPATH)
-WORKDIR $GOPATH/src/app
+WORKDIR /go/src/app
 
-COPY peer/peer.go ./peer/
-COPY lib ./lib
+COPY wait-for-it.sh peer/peer.go lib/lib.go ./
 
-RUN go mod init \
-    && go mod tidy \
-    && go mod download \
+RUN mkdir peer lib && mv peer.go peer && mv lib.go lib \
+    && go mod init && go mod tidy && go mod download \
     && go build lib/lib.go \
-    && go install ./peer
+    && go install ./peer \
+    && apk update && apk add bash
 
-CMD [ "sh", "-c", "${GOPATH}/bin/peer 'messaggio'" ]
+ENTRYPOINT [ "./wait-for-it.sh", "registry:4321", "-q" ]
+CMD [  "--", "sh", "-c", "/go/bin/peer 'messaggio'" ]

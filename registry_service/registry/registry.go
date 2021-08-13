@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/rpc"
@@ -27,7 +28,23 @@ func main() {
 	if err != nil {
 		log.Fatal("Listen error: ", err)
 	}
-	log.Printf("RPC server on port %d, pid %d", 4321)
+	name, err := os.Hostname()
+	if err != nil {
+		fmt.Printf("Oops: %v\n", err)
+		return
+	}
+
+	addrs, err := net.LookupHost(name)
+	if err != nil {
+		fmt.Printf("Oops: %v\n", err)
+		return
+	}
+
+	for _, a := range addrs {
+		fmt.Println(a)
+	}
+
+	log.Printf("RPC server on port %d", 4321)
 
 	// Start go's http server on socket specified by listener
 	// err = http.Serve(lis, nil)

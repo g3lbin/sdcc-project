@@ -1,15 +1,12 @@
 FROM golang:1.16-alpine
 
-RUN export GOPATH=$(go env GOPATH)
-WORKDIR $GOPATH/src/app
+WORKDIR /go/src/app
 
-COPY registry/registry.go ./registry/
-COPY lib ./lib
+COPY registry/registry.go lib/lib.go ./
 
-RUN go mod init \
-    && go mod tidy \
-    && go mod download \
+RUN mkdir registry lib && mv registry.go registry && mv lib.go lib \
+    && go mod init && go mod tidy && go mod download \
     && go build lib/lib.go \
     && go install ./registry
 
-CMD [ "sh", "-c", "${GOPATH}/bin/registry" ]
+ENTRYPOINT [ "sh", "-c", "/go/bin/registry" ]
