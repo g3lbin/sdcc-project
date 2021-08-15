@@ -1,28 +1,30 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"math/rand"
+	"net"
 	"net/rpc"
 	"os"
+	"strconv"
+	"sync"
 	"time"
 
 	"app/lib"
 )
 
-func main() {
+var name string
+var wg sync.WaitGroup
+
+func senderRoutine() {
 	var msg lib.Message
 	var res lib.Result
+
+	defer wg.Done()
 
 	rand.Seed(time.Now().UnixNano())
 	min := 5
 	max := 120
-
-	name, err := os.Hostname()
-	if err != nil {
-		log.Fatal("Hostname error: ", err)
-	}
 
 	addr := "registry:" + "4321" //address and port on which RPC server is listening
 	// Try to connect to addr
@@ -33,34 +35,78 @@ func main() {
 	defer cl.Close()
 
 	if len(os.Args) < 2 {
-		fmt.Printf("No args passed in\n")
-		os.Exit(1)
+		log.Fatal("No args passed in")
 	}
 
 	msg = lib.Message(os.Args[1])
 
-	// reply will store the RPC result
-	// Call remote procedure
-	log.Printf("Synchronous call to RPC server")
-	err = cl.Call("Writer.Write_on_terminal", msg, &res)
-	if err != nil {
-		log.Fatal("Error in Writer.Write_on_terminal: ", err)
-	}
+	for {
+		// reply will store the RPC result
+		// Call remote procedure
+		err = cl.Call("Receiver.Receive_message", msg, &res)
+		if err != nil {
+			log.Fatal("Error in Receiver.Receive_message: ", err)
+		}
+		log.Printf("%s received: %d\n", name, res)
+		res = 0
 
-	fmt.Printf("Writer.Write_on_terminal result: %d\n\n", res)
-
-	for i := 0; i < 10; i++ {
 		r := rand.Intn(max - min + 1) + min
-		log.Printf("hostname: %s, rand: %d", name, r)
+		msg = lib.Message(strconv.Itoa(r))
 		time.Sleep(time.Duration(r) * time.Second)
 	}
-	// Asynchronous call
-	// divReply := new(arith.Quotient)
-	// log.Printf("Asynchronous call to RPC server")
-	// divCall := client.Go("Arithmetic.Divide", args, divReply, nil)
-	// divCall = <-divCall.Done
-	// if divCall.Error != nil {
-	// 	log.Fatal("Error in Arithmetic.Divide: ", divCall.Error.Error())
+}
+
+func receiverRoutine() {
+	rcv := new(lib.Receiver)
+
+	defer wg.Done()
+	// Register a new RPC server and the struct we created above
+	server := rpc.NewServer()
+	err := server.RegisterName("Receiver", rcv)
+	if err != nil {
+		log.Fatal("Format of service is not correct: ", err)
+	}
+	// Register an HTTP handler for RPC messages on rpcPath, and a debugging handler on debugPath
+	// server.HandleHTTP("/", "/debug")
+
+	// Listen for incoming messages on port 4321
+	lis, err := net.Listen("tcp", ":4321")
+	if err != nil {
+		log.Fatal("Listen error: ", err)
+	}
+
+	rcv.Name = name
+
+	//addrs, err := net.LookupHost(name)
+	//if err != nil {
+	//	fmt.Printf("Oops: %v\n", err)
+	//	return
+	//}
+	//
+	//for _, a := range addrs {
+	//	fmt.Println(a)
+	//}
+
+	// Start go's http server on socket specified by listener
+	// err = http.Serve(lis, nil)
+	// if err != nil {
+	// 	log.Fatal("Serve error: ", err)
 	// }
-	// fmt.Printf("Arithmetic.Divide: %d/%d=%d (rem=%d)\n", args.A, args.B, divReply.Quo, divReply.Rem)
+	server.Accept(lis)
+}
+
+func main() {
+	var err error
+
+	wg = sync.WaitGroup{}
+
+	name, err = os.Hostname()
+	if err != nil {
+		log.Fatal("Hostname error: ", err)
+	}
+
+	wg.Add(2)
+	go senderRoutine()
+	go receiverRoutine()
+	wg.Wait()
 }

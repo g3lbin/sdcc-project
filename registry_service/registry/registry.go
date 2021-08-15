@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"net/rpc"
@@ -11,12 +10,11 @@ import (
 )
 
 func main() {
-
-	wr := new(lib.Writer)
+	rcv := new(lib.Receiver)
 
 	// Register a new RPC server and the struct we created above
 	server := rpc.NewServer()
-	err := server.RegisterName("Writer", wr)
+	err := server.RegisterName("Receiver", rcv)
 	if err != nil {
 		log.Fatal("Format of service is not correct: ", err)
 	}
@@ -24,27 +22,27 @@ func main() {
 	// server.HandleHTTP("/", "/debug")
 
 	// Listen for incoming messages on port 4321
-	lis, err := net.Listen("tcp", ":4321")
+	lis, err := net.Listen("tcp", ":" + os.Args[1])
 	if err != nil {
 		log.Fatal("Listen error: ", err)
 	}
 	name, err := os.Hostname()
 	if err != nil {
-		fmt.Printf("Oops: %v\n", err)
-		return
+		log.Fatal("Oops: ", err)
 	}
+
+	rcv.Name = name
 
 	addrs, err := net.LookupHost(name)
 	if err != nil {
-		fmt.Printf("Oops: %v\n", err)
-		return
+		log.Fatal("Oops: ", err)
 	}
 
 	for _, a := range addrs {
-		fmt.Println(a)
+		log.Printf("%s", a)
 	}
 
-	log.Printf("RPC server on port %d", 4321)
+	log.Printf("Registry on port %d", 4321)
 
 	// Start go's http server on socket specified by listener
 	// err = http.Serve(lis, nil)
