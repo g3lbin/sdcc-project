@@ -9,4 +9,4 @@ RUN mkdir registry lib && mv registry.go registry && mv lib.go lib \
     && go build lib/lib.go \
     && go install ./registry
 
-ENTRYPOINT [ "sh", "-c", "/go/bin/registry" ]
+ENTRYPOINT [ "sh", "-c", "/go/bin/registry ${LISTENING_PORT}" ]

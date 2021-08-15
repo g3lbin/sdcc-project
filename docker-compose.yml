@@ -10,6 +10,8 @@ services:
     networks:
       - my_net
   registry:
+    environment:
+      - LISTENING_PORT=${REGISTRY_PORT}
     build: registry_service
     networks:
       - my_net
