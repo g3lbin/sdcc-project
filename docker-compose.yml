@@ -4,7 +4,11 @@ networks:
  
 services:
   peer:
+    environment:
+      - MEMBERS_NUM=${MEMBERS_NUM}
+      - REGISTRY_PORT=${REGISTRY_PORT}
     build: peer_service
+    scale: ${MEMBERS_NUM}
     depends_on:
       - "registry"
     networks:
@@ -12,7 +16,10 @@ services:
   registry:
     environment:
       - LISTENING_PORT=${REGISTRY_PORT}
+      - MEMBERS_NUM=${MEMBERS_NUM}
     build: registry_service
+    volumes:
+      - ./registry_service/volume:/go/src/app/registry
     networks:
       - my_net
     ports:

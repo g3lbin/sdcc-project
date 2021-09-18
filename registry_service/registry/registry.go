@@ -5,49 +5,45 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"strconv"
 
 	"app/lib"
 )
 
 func main() {
-	rcv := new(lib.Receiver)
+	var err error
+
+	registry := new(lib.Registry)
+
+	tmp, ok := os.LookupEnv("MEMBERS_NUM")
+	if !ok {
+		log.Fatal("MEMBERS_NUM environment variable is not set")
+	}
+	registry.MembersNum, err = strconv.Atoi(tmp)
+	if err != nil {
+		log.Fatal("Atoi error: ", err)
+	}
+
+	registry.FilePath = "/go/src/app/registry/registry.txt"
 
 	// Register a new RPC server and the struct we created above
 	server := rpc.NewServer()
-	err := server.RegisterName("Receiver", rcv)
+	err = server.RegisterName("Registry", registry)
 	if err != nil {
 		log.Fatal("Format of service is not correct: ", err)
 	}
-	// Register an HTTP handler for RPC messages on rpcPath, and a debugging handler on debugPath
-	// server.HandleHTTP("/", "/debug")
 
-	// Listen for incoming messages on port 4321
-	lis, err := net.Listen("tcp", ":" + os.Args[1])
+	port, ok:= os.LookupEnv("LISTENING_PORT")
+	if !ok {
+		log.Fatal("LISTENING_PORT environment variable is not set")
+	}
+
+	// Listen for incoming messages on port LISTENING_PORT
+	lis, err := net.Listen("tcp", ":" + port)
 	if err != nil {
 		log.Fatal("Listen error: ", err)
 	}
-	name, err := os.Hostname()
-	if err != nil {
-		log.Fatal("Oops: ", err)
-	}
 
-	rcv.Name = name
-
-	addrs, err := net.LookupHost(name)
-	if err != nil {
-		log.Fatal("Oops: ", err)
-	}
-
-	for _, a := range addrs {
-		log.Printf("%s", a)
-	}
-
-	log.Printf("Registry on port %d", 4321)
-
-	// Start go's http server on socket specified by listener
-	// err = http.Serve(lis, nil)
-	// if err != nil {
-	// 	log.Fatal("Serve error: ", err)
-	// }
+	log.Printf("Registry on port %s", port)
 	server.Accept(lis)
 }

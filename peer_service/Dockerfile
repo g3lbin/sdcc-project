@@ -10,5 +10,5 @@ RUN mkdir peer lib && mv peer.go peer && mv lib.go lib \
     && go install ./peer \
     && apk update && apk add bash
 
-ENTRYPOINT [ "./wait-for-it.sh", "registry:4321", "-q" ]
-CMD [  "--", "sh", "-c", "/go/bin/peer 'hello'" ]
+ENTRYPOINT [ "./wait-for-it.sh", "registry:${REGISTRY_PORT}", "-q" ]
+CMD [  "--", "sh", "-c", "/go/bin/peer" ]
