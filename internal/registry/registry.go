@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 
-	"app/lib"
+	"github.com/sdcc-project/internal/lib"
 )
 
 func main() {

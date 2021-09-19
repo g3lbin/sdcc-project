@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"app/lib"
+	"github.com/sdcc-project/internal/lib"
 )
 
 var name string

@@ -7,7 +7,9 @@ services:
     environment:
       - MEMBERS_NUM=${MEMBERS_NUM}
       - REGISTRY_PORT=${REGISTRY_PORT}
-    build: peer_service
+    build:
+      context: ../internal
+      dockerfile: ../deployments/peer/Dockerfile
     scale: ${MEMBERS_NUM}
     depends_on:
       - "registry"
@@ -17,9 +19,11 @@ services:
     environment:
       - LISTENING_PORT=${REGISTRY_PORT}
       - MEMBERS_NUM=${MEMBERS_NUM}
-    build: registry_service
+    build:
+      context: ../internal
+      dockerfile: ../deployments/registry/Dockerfile
     volumes:
-      - ./registry_service/volume:/go/src/app/registry
+      - ../internal/registry/volume:/go/src/app/registry
     networks:
       - my_net
     ports:
