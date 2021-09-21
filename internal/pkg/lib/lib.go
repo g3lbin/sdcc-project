@@ -23,17 +23,21 @@ var fileLock sync.RWMutex
 var counterLock sync.RWMutex
 var members = 0
 
+func ErrorHandler(foo string, err error) {
+	log.Fatalf("%s has failed: %s", foo, err)
+}
+
 func (registry *Registry) RegisterMember(arg Message, res *[]string) error {
 	fileLock.Lock()
 	file, err := os.OpenFile(registry.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Fatalf("Failed creating file: %s", err)
+		ErrorHandler("OpenFile", err)
 	}
 
 	writer := bufio.NewWriter(file)
 	_, err = writer.WriteString(string(arg) + "\n")
 	if err != nil {
-		log.Fatalf("WriteString error: %s", err)
+		ErrorHandler("WriteString", err)
 	}
 	writer.Flush()
 	file.Close()
@@ -51,7 +55,7 @@ func (registry *Registry) RegisterMember(arg Message, res *[]string) error {
 			file, err = os.OpenFile(registry.FilePath, os.O_RDONLY, 0644)
 
 			if err != nil {
-				log.Fatalf("Failed creating file: %s", err)
+				ErrorHandler("OpenFile", err)
 			}
 
 			scanner := bufio.NewScanner(file)
@@ -59,7 +63,7 @@ func (registry *Registry) RegisterMember(arg Message, res *[]string) error {
 				*res = append(*res, scanner.Text())
 			}
 			if err := scanner.Err(); err != nil {
-				log.Fatal("Scanner error: ", err)
+				ErrorHandler("Scanner", err)
 			}
 			file.Close()
 			fileLock.RUnlock()

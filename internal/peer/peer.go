@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"log"
 	"math/rand"
 	"net"
@@ -10,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sdcc-project/internal/lib"
+	"github.com/sdcc-project/internal/pkg/lib"
 )
 
 var name string
@@ -20,15 +21,15 @@ func registration() []string {
 	var msg lib.Message
 	var list []string
 
-	port, ok := os.LookupEnv("REGISTRY_PORT")
+	port, ok := os.LookupEnv("REGISTRATION_PORT")
 	if !ok {
-		log.Fatal("REGISTRY_PORT environment variable is not set")
+		log.Fatal("REGISTRATION_PORT environment variable is not set")
 	}
-	addr := "registry:" + port // address and port on which RPC server is listening
+	addr := "registration:" + port // address and port on which RPC server is listening
 	// Try to connect to addr
 	cl, err := rpc.Dial("tcp", addr)
 	if err != nil {
-		log.Fatal("Error in dialing: ", err)
+		lib.ErrorHandler("Dial", err)
 	}
 	defer cl.Close()
 
@@ -36,7 +37,7 @@ func registration() []string {
 	// Call remote procedure
 	err = cl.Call("Registry.RegisterMember", msg, &list)
 	if err != nil {
-		log.Fatal("Error in Registry.RegisterMember: ", err)
+		lib.ErrorHandler("Call", err)
 	}
 
 	return list
@@ -52,11 +53,11 @@ func senderRoutine() {
 	min := 5
 	max := 120
 
-	addr := "registry:" + "4321" //address and port on which RPC server is listening
+	addr := "registration:" + "4321" //address and port on which RPC server is listening
 	// Try to connect to addr
 	cl, err := rpc.Dial("tcp", addr)
 	if err != nil {
-		log.Fatal("Error in dialing: ", err)
+		lib.ErrorHandler("Dial", err)
 	}
 	defer cl.Close()
 
@@ -71,7 +72,7 @@ func senderRoutine() {
 		// Call remote procedure
 		err = cl.Call("Receiver.Receive_message", msg, &res)
 		if err != nil {
-			log.Fatal("Error in Receiver.Receive_message: ", err)
+			lib.ErrorHandler("Call", err)
 		}
 		log.Printf("%s received: %d\n", name, res)
 		res = 0
@@ -90,7 +91,7 @@ func receiverRoutine() {
 	server := rpc.NewServer()
 	err := server.RegisterName("Receiver", rcv)
 	if err != nil {
-		log.Fatal("Format of service is not correct: ", err)
+		lib.ErrorHandler("RegisterName", err)
 	}
 	// Register an HTTP handler for RPC messages on rpcPath, and a debugging handler on debugPath
 	// server.HandleHTTP("/", "/debug")
@@ -98,7 +99,7 @@ func receiverRoutine() {
 	// Listen for incoming messages on port 4321
 	lis, err := net.Listen("tcp", ":4321")
 	if err != nil {
-		log.Fatal("Listen error: ", err)
+		lib.ErrorHandler("Listen", err)
 	}
 
 	rcv.Name = name
@@ -121,6 +122,33 @@ func receiverRoutine() {
 	server.Accept(lis)
 }
 
+func getMessage() {
+	var buffer string
+
+	defer wg.Done()
+
+	port, ok:= os.LookupEnv("CONTROL_PORT")
+	if !ok {
+		log.Fatal("CONTROL_PORT environment variable is not set")
+	}
+
+	// Listen for incoming messages on port CONTROL_PORT
+	lis, err := net.Listen("tcp", ":" + port)
+	if err != nil {
+		lib.ErrorHandler("Listen", err)
+	}
+	for {
+		conn, err := lis.Accept()
+		if err != nil {
+			continue
+		}
+		clientReader := bufio.NewReader(conn)
+		buffer, err = clientReader.ReadString('\n')
+		log.Printf("%s has received: %s", name, buffer)
+		conn.Close()
+	}
+}
+
 func main() {
 	var membership []string
 	var err error
@@ -131,12 +159,12 @@ func main() {
 	}
 	membNum, err := strconv.Atoi(tmp)
 	if err != nil {
-		log.Fatal("Atoi error: ", err)
+		lib.ErrorHandler("Atoi", err)
 	}
 
 	name, err = os.Hostname()
 	if err != nil {
-		log.Fatal("Hostname error: ", err)
+		lib.ErrorHandler("Hostname", err)
 	}
 
 	membership = registration()
@@ -144,9 +172,10 @@ func main() {
 		log.Printf("%s\n", membership[i])
 	}
 
-	//wg = sync.WaitGroup{}
-	//wg.Add(2)
+	wg = sync.WaitGroup{}
+	wg.Add(1)
 	//go senderRoutine()
 	//go receiverRoutine()
-	//wg.Wait()
+	go getMessage()
+	wg.Wait()
 }

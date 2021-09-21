@@ -6,25 +6,32 @@ services:
   peer:
     environment:
       - MEMBERS_NUM=${MEMBERS_NUM}
-      - REGISTRY_PORT=${REGISTRY_PORT}
+      - REGISTRATION_PORT=${REGISTRATION_PORT}
+      - MULTICAST_PORT=${MULTICAST_PORT}
+      - CONTROL_PORT=${CONTROL_PORT}
     build:
-      context: ../internal
-      dockerfile: ../deployments/peer/Dockerfile
+      context: ..
+      dockerfile: deployments/peer/Dockerfile
+    image: service_client
     scale: ${MEMBERS_NUM}
     depends_on:
-      - "registry"
-    networks:
-      - my_net
-  registry:
-    environment:
-      - LISTENING_PORT=${REGISTRY_PORT}
-      - MEMBERS_NUM=${MEMBERS_NUM}
-    build:
-      context: ../internal
-      dockerfile: ../deployments/registry/Dockerfile
-    volumes:
-      - ../internal/registry/volume:/go/src/app/registry
+      - "registration"
     networks:
       - my_net
     ports:
-      - ${REGISTRY_PORT}
+      - ${MULTICAST_PORT}
+      - ${CONTROL_PORT}
+  registration:
+    environment:
+      - LISTENING_PORT=${REGISTRATION_PORT}
+      - MEMBERS_NUM=${MEMBERS_NUM}
+    build:
+      context: ..
+      dockerfile: deployments/registration/Dockerfile
+    image: registration_service
+    volumes:
+      - ../internal/registration/volume:/go/src/app/registration
+    networks:
+      - my_net
+    ports:
+      - ${REGISTRATION_PORT}

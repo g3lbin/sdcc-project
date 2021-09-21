@@ -1,14 +1,13 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.16 AS builder
+ENV GO111MODULE=on
+WORKDIR /go/src/github.com/sdcc-project
+COPY . .
+RUN go mod download && go build -o app internal/peer/peer.go
+
 FROM golang:1.16-alpine
-
-WORKDIR /go/src/app
-
-COPY go.mod peer/wait-for-it.sh peer/peer.go pkg/lib/lib.go ./
-
-RUN mkdir peer lib && mv peer.go peer && mv lib.go lib \
-    && go mod download \
-    && go build lib/lib.go \
-    && go install ./peer \
-    && apk update && apk add bash
-
-ENTRYPOINT [ "./wait-for-it.sh", "registry:${REGISTRY_PORT}", "-q" ]
-CMD [  "--", "sh", "-c", "/go/bin/peer" ]
+RUN apk update && apk add bash
+WORKDIR /root/
+COPY --from=builder /go/src/github.com/sdcc-project/app /go/src/github.com/sdcc-project/internal/peer/wait-for-it.sh ./
+ENTRYPOINT [ "./wait-for-it.sh", "registration:${REGISTRY_PORT}", "-q" ]
+CMD [  "--", "/bin/sh", "-c", "app" ]

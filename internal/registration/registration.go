@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/sdcc-project/internal/lib"
+	"github.com/sdcc-project/internal/pkg/lib"
 )
 
 func main() {
@@ -21,16 +21,16 @@ func main() {
 	}
 	registry.MembersNum, err = strconv.Atoi(tmp)
 	if err != nil {
-		log.Fatal("Atoi error: ", err)
+		lib.ErrorHandler("Atoi", err)
 	}
 
-	registry.FilePath = "/go/src/app/registry/registry.txt"
+	registry.FilePath = "/go/src/app/registration/registry.txt"
 
 	// Register a new RPC server and the struct we created above
 	server := rpc.NewServer()
 	err = server.RegisterName("Registry", registry)
 	if err != nil {
-		log.Fatal("Format of service is not correct: ", err)
+		lib.ErrorHandler("RegisterName", err)
 	}
 
 	port, ok:= os.LookupEnv("LISTENING_PORT")
@@ -41,9 +41,9 @@ func main() {
 	// Listen for incoming messages on port LISTENING_PORT
 	lis, err := net.Listen("tcp", ":" + port)
 	if err != nil {
-		log.Fatal("Listen error: ", err)
+		lib.ErrorHandler("Listen", err)
 	}
 
-	log.Printf("Registry on port %s", port)
+	log.Printf("Registration service on port %s", port)
 	server.Accept(lis)
 }
