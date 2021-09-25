@@ -24,7 +24,7 @@ func main() {
 		lib.ErrorHandler("Atoi", err)
 	}
 
-	registry.FilePath = "/go/src/app/registration/registry.txt"
+	registry.FilePath = "./registry.txt"
 
 	// Register a new RPC server and the struct we created above
 	server := rpc.NewServer()

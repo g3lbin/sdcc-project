@@ -29,8 +29,6 @@ services:
       context: ..
       dockerfile: deployments/registration/Dockerfile
     image: registration_service
-    volumes:
-      - ../internal/registration/volume:/go/src/app/registration
     networks:
       - my_net
     ports:
