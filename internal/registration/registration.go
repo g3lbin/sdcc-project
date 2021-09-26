@@ -1,13 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/rpc"
 	"os"
 	"strconv"
 
-	"github.com/sdcc-project/internal/pkg/lib"
+	lib "github.com/sdcc-project/internal/pkg/rpcregistration"
+	"github.com/sdcc-project/internal/pkg/utils"
 )
 
 func main() {
@@ -21,7 +23,7 @@ func main() {
 	}
 	registry.MembersNum, err = strconv.Atoi(tmp)
 	if err != nil {
-		lib.ErrorHandler("Atoi", err)
+		utils.ErrorHandler("Atoi", err)
 	}
 
 	registry.FilePath = "./registry.txt"
@@ -30,7 +32,7 @@ func main() {
 	server := rpc.NewServer()
 	err = server.RegisterName("Registry", registry)
 	if err != nil {
-		lib.ErrorHandler("RegisterName", err)
+		utils.ErrorHandler("RegisterName", err)
 	}
 
 	port, ok:= os.LookupEnv("LISTENING_PORT")
@@ -41,9 +43,9 @@ func main() {
 	// Listen for incoming messages on port LISTENING_PORT
 	lis, err := net.Listen("tcp", ":" + port)
 	if err != nil {
-		lib.ErrorHandler("Listen", err)
+		utils.ErrorHandler("Listen", err)
 	}
 
-	log.Printf("Registration service on port %s", port)
+	fmt.Printf("Registration service on port %s...\n", port)
 	server.Accept(lis)
 }

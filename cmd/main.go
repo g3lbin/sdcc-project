@@ -69,7 +69,7 @@ func main() {
 	}
 	fmt.Println("Set the usernames for the chat participants")
 	for _, container := range containers {
-		if container.Image != "service_client" {
+		if container.Image != "peer_service" {
 			continue
 		}
 
