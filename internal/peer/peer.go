@@ -11,7 +11,41 @@ import (
 	seq "github.com/sdcc-project/internal/pkg/rpcsequencer"
 )
 
-var name string
+var ip string
+
+func retrieveIpAddr() string {
+	var res string
+
+	count := 0
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		utils.ErrorHandler("Interfaces", err)
+	}
+	for _, i := range ifaces {
+		addrs, err := i.Addrs()
+		if err != nil {
+			utils.ErrorHandler("Addrs", err)
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip.String() != "127.0.0.1" {
+				res = ip.String()
+				count++
+			}
+		}
+	}
+	if count != 1 {
+		log.Fatal("There are more than one non-loopback interfaces")
+	}
+
+	return res
+}
 
 func registration() []string {
 	var msg string
@@ -29,7 +63,7 @@ func registration() []string {
 	}
 	defer cl.Close()
 
-	msg = name
+	msg = ip
 	// Call remote procedure
 	err = cl.Call("Registry.RegisterMember", msg, &list)
 	if err != nil {
@@ -58,7 +92,7 @@ func sendMessage(msg string, algo string) {
 		defer cl.Close()
 
 		sender.Msg = msg
-		sender.Host = name
+		sender.Host = ip
 		// reply will store the RPC result
 		// Call remote procedure
 		err = cl.Call("Sequencer.SendInMulticast", sender, &res)
@@ -100,7 +134,6 @@ func receiveMessage(ch chan string) {
 func main() {
 	var algorithm string
 	// var membership []string
-	var err error
 
 	algorithm, ok := os.LookupEnv("MULTICAST_ALGORITHM")
 	if !ok {
@@ -116,10 +149,7 @@ func main() {
 	//	utils.ErrorHandler("Atoi", err)
 	//}
 
-	name, err = os.Hostname()
-	if err != nil {
-		utils.ErrorHandler("Hostname", err)
-	}
+	ip = retrieveIpAddr()
 
 	//membership = registration()
 	registration()
