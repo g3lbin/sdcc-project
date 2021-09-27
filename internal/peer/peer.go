@@ -2,13 +2,15 @@ package main
 
 import (
 	"bufio"
-	"github.com/sdcc-project/internal/pkg/utils"
+	"fmt"
 	"log"
 	"net"
 	"net/rpc"
 	"os"
+	"strconv"
 
-	seq "github.com/sdcc-project/internal/pkg/rpcsequencer"
+	peer "github.com/sdcc-project/internal/pkg/rpcpeer"
+	"github.com/sdcc-project/internal/pkg/utils"
 )
 
 var ip string
@@ -74,7 +76,7 @@ func registration() []string {
 }
 
 func sendMessage(msg string, algo string) {
-	var sender seq.Sender
+	var sender utils.Sender
 	var res int
 
 	if algo == "tot-ordered-centr" {
@@ -127,8 +129,30 @@ func getMessageToSend(ch chan string) {
 	}
 }
 
-func receiveMessage(ch chan string) {
+func getMessagesFromPeers() {
+	var err error
 
+	p := new(peer.Peer)
+
+	// Register a new RPC server
+	server := rpc.NewServer()
+	err = server.RegisterName("Peer", p)
+	if err != nil {
+		utils.ErrorHandler("RegisterName", err)
+	}
+
+	lisPort, ok:= os.LookupEnv("MULTICAST_PORT")
+	if !ok {
+		log.Fatal("MULTICAST_PORT environment variable is not set")
+	}
+
+	// Listen for incoming messages on port LISTENING_PORT
+	lis, err := net.Listen("tcp", ":" + lisPort)
+	if err != nil {
+		utils.ErrorHandler("Listen", err)
+	}
+
+	server.Accept(lis)
 }
 
 func main() {
@@ -140,30 +164,30 @@ func main() {
 		log.Fatal("MULTICAST_ALGORITHM environment variable is not set")
 	}
 
-	//tmp, ok := os.LookupEnv("MEMBERS_NUM")
-	//if !ok {
-	//	log.Fatal("MEMBERS_NUM environment variable is not set")
-	//}
-	//membNum, err := strconv.Atoi(tmp)
-	//if err != nil {
-	//	utils.ErrorHandler("Atoi", err)
-	//}
+	tmp, ok := os.LookupEnv("MEMBERS_NUM")
+	if !ok {
+		log.Fatal("MEMBERS_NUM environment variable is not set")
+	}
+	membNum, err := strconv.Atoi(tmp)
+	if err != nil {
+		utils.ErrorHandler("Atoi", err)
+	}
 
 	ip = retrieveIpAddr()
 
 	//membership = registration()
 	registration()
 
-	chFromPeers := make(chan string)
-	chFromCL := make(chan string)
-	go receiveMessage(chFromPeers)
+	go getMessagesFromPeers()
+	peer.ChFromPeers = make(chan utils.Sender, membNum*10)
+	chFromCL := make(chan string, 10)
 	go getMessageToSend(chFromCL)
 	for {
 		select {
 		case msgToSend := <- chFromCL:
 			sendMessage(msgToSend, algorithm)
-		// case receivedMsg := <- chFromPeers:
-
+		 case receivedStruct := <- peer.ChFromPeers:
+			 fmt.Printf("##%s##\t%s has written: %s\n", receivedStruct.Order, receivedStruct.Host, receivedStruct.Msg)
 		}
 	}
 }

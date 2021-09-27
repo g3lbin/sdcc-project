@@ -5,8 +5,10 @@ networks:
 services:
   sequencer:
     environment:
+      - MEMBERS_NUM=${MEMBERS_NUM}
       - REGISTRATION_PORT=${REGISTRATION_PORT}
       - LISTENING_PORT=${SEQUENCER_PORT}
+      - PEER_PORT=${MULTICAST_PORT}
     build:
       context: ..
       dockerfile: deployments/sequencer/Dockerfile

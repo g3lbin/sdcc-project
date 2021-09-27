@@ -45,7 +45,6 @@ func main() {
 	if err != nil {
 		utils.ErrorHandler("Listen", err)
 	}
-
 	fmt.Printf("Registration service on port %s...\n", port)
 	server.Accept(lis)
 }

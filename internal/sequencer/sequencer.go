@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"strconv"
 )
 
 func getMembership() []string {
@@ -41,6 +42,15 @@ func main() {
 
 	sequencer := new(lib.Sequencer)
 	sequencer.Membership = getMembership()
+
+	tmp, ok := os.LookupEnv("MEMBERS_NUM")
+	if !ok {
+		log.Fatal("MEMBERS_NUM environment variable is not set")
+	}
+	sequencer.MembNum, err = strconv.Atoi(tmp)
+	if err != nil {
+		utils.ErrorHandler("Atoi", err)
+	}
 
 	// Register a new RPC server
 	server := rpc.NewServer()
