@@ -7,12 +7,16 @@ import (
 	"net/rpc"
 	"os"
 	"strconv"
+	"sync"
 
 	lib "github.com/sdcc-project/internal/pkg/rpcregistration"
 	"github.com/sdcc-project/internal/pkg/utils"
 )
 
+var wg sync.WaitGroup
+
 func main() {
+	var requestsNum int
 	var err error
 
 	registry := new(lib.Registry)
@@ -45,6 +49,28 @@ func main() {
 	if err != nil {
 		utils.ErrorHandler("Listen", err)
 	}
+
+	algorithm, ok := os.LookupEnv("MULTICAST_ALGORITHM")
+	if !ok {
+		log.Fatal("MULTICAST_ALGORITHM environment variable is not set")
+	}
+	requestsNum = registry.MembersNum
+	if algorithm == "tot-ordered-centr" {
+		requestsNum++
+	}
+
 	fmt.Printf("Registration service on port %s...\n", port)
-	server.Accept(lis)
+	wg.Add(requestsNum)
+	for i := 0; i < requestsNum; i++ {
+		go func() {
+			conn, err := lis.Accept()
+			if err != nil {
+				utils.ErrorHandler("Accept", err)
+			}
+			server.ServeConn(conn)
+			conn.Close()
+			wg.Done()
+		}()
+	}
+	wg.Wait()
 }

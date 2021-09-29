@@ -51,6 +51,7 @@ func main() {
 	if err != nil {
 		utils.ErrorHandler("Atoi", err)
 	}
+	sequencer.SetupConn = true
 
 	// Register a new RPC server
 	server := rpc.NewServer()

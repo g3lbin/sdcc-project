@@ -11,18 +11,17 @@ import (
 
 type Sequencer struct {
 	Membership []string
+	Clients []*rpc.Client
 	MembNum int
+	SetupConn bool
 }
 
+var checkConnLock sync.Mutex
 var seqNumLock sync.Mutex
 var sequenceNumber = 0
 
-func (sequencer *Sequencer) SendInMulticast(arg utils.Sender, res *int) error {
-	seqNumLock.Lock()
-	sequenceNumber++
-	arg.Order = strconv.Itoa(sequenceNumber)
-	seqNumLock.Unlock()
-
+func setupConnections(sequencer *Sequencer) {
+	// Setup all connections
 	port, ok := os.LookupEnv("PEER_PORT")
 	if !ok {
 		log.Fatal("PEER_PORT environment variable is not set")
@@ -34,12 +33,28 @@ func (sequencer *Sequencer) SendInMulticast(arg utils.Sender, res *int) error {
 		if err != nil {
 			utils.ErrorHandler("Dial", err)
 		}
+		sequencer.Clients = append(sequencer.Clients, cl)
+	}
+	sequencer.SetupConn = false
+}
+
+func (sequencer *Sequencer) SendInMulticast(arg utils.Sender, res *int) error {
+	seqNumLock.Lock()
+	arg.Order = strconv.Itoa(sequenceNumber)
+	sequenceNumber++
+	seqNumLock.Unlock()
+
+	checkConnLock.Lock()
+	if sequencer.SetupConn {
+		setupConnections(sequencer)
+	}
+	checkConnLock.Unlock()
+	for i := 0; i < sequencer.MembNum; i++ {
 		// Call remote procedure
-		err = cl.Call("Peer.ReceiveMessage", arg, res)
+		err := sequencer.Clients[i].Call("Peer.ReceiveMessage", arg, res)
 		if err != nil {
 			utils.ErrorHandler("Call", err)
 		}
-		cl.Close()
 	}
 
 	*res = 0

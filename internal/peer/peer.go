@@ -75,8 +75,7 @@ func registration() []string {
 	return list
 }
 
-func sendMessage(msg string, algo string) {
-	var sender utils.Sender
+func sendMessages(algo string, ch chan string) {
 	var res int
 
 	if algo == "tot-ordered-centr" {
@@ -84,27 +83,30 @@ func sendMessage(msg string, algo string) {
 		if !ok {
 			log.Fatal("REGISTRATION_PORT environment variable is not set")
 		}
-
 		addr := "sequencer:" + port //address and port on which RPC server is listening
+
+		sender := new(utils.Sender)
+		sender.Host = ip
+		sender.Msg = <-ch
+
 		// Try to connect to addr
 		cl, err := rpc.Dial("tcp", addr)
 		if err != nil {
 			utils.ErrorHandler("Dial", err)
 		}
-		defer cl.Close()
-
-		sender.Msg = msg
-		sender.Host = ip
-		// reply will store the RPC result
-		// Call remote procedure
-		err = cl.Call("Sequencer.SendInMulticast", sender, &res)
-		if err != nil {
-			utils.ErrorHandler("Call", err)
+		for {
+			// reply will store the RPC result
+			// Call remote procedure
+			err = cl.Call("Sequencer.SendInMulticast", sender, &res)
+			if err != nil {
+				utils.ErrorHandler("Call", err)
+			}
+			sender.Msg = <-ch
 		}
 	}
 }
 
-func getMessageToSend(ch chan string) {
+func getMessagesToSend(ch chan string) {
 	var buffer string
 
 	port, ok:= os.LookupEnv("CONTROL_PORT")
@@ -117,15 +119,14 @@ func getMessageToSend(ch chan string) {
 	if err != nil {
 		utils.ErrorHandler("Listen", err)
 	}
+	conn, err := lis.Accept()
+	if err != nil {
+		utils.ErrorHandler("Accept", err)
+	}
+	reader := bufio.NewReader(conn)
 	for {
-		conn, err := lis.Accept()
-		if err != nil {
-			continue
-		}
-		clientReader := bufio.NewReader(conn)
-		buffer, err = clientReader.ReadString('\n')
+		buffer, err = reader.ReadString('\n')
 		ch <- buffer
-		conn.Close()
 	}
 }
 
@@ -181,13 +182,14 @@ func main() {
 	go getMessagesFromPeers()
 	peer.ChFromPeers = make(chan utils.Sender, membNum*10)
 	chFromCL := make(chan string, 10)
-	go getMessageToSend(chFromCL)
+	go getMessagesToSend(chFromCL)
+	go sendMessages(algorithm, chFromCL)
 	for {
 		select {
-		case msgToSend := <- chFromCL:
-			sendMessage(msgToSend, algorithm)
+		// case msgToSend := <- chFromCL:
+		//	sendMessage(msgToSend, algorithm)
 		 case receivedStruct := <- peer.ChFromPeers:
-			 fmt.Printf("##%s##\t%s has written: %s\n", receivedStruct.Order, receivedStruct.Host, receivedStruct.Msg)
+			 fmt.Printf("##%s##\t%s has written: %s", receivedStruct.Order, receivedStruct.Host, receivedStruct.Msg)
 		}
 	}
 }

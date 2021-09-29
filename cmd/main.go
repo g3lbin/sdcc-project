@@ -44,13 +44,29 @@ func getAddress(peers []peer, user string, num int) string {
 	return "undefined"
 }
 
+func connectionHandler(p peer, ch chan string) {
+	service := p.ipAddr + ":" + strconv.Itoa(int(p.port))
+	conn, err := net.Dial("tcp", service)
+	if err != nil {
+		errorHandler("Dial", err)
+	}
+	defer conn.Close()
+	for {
+		msg := <- ch
+		_, err = conn.Write([]byte(msg + "\n"))
+		if err != nil {
+			errorHandler("Write", err)
+		}
+	}
+}
+
 func main() {
 	var peers []peer
+	var channelMap map[string]chan string
 	var temp peer
 	var username string
-	var service string
-	var msg string
 
+	channelMap = make(map[string]chan string)
 	peerNum := 0
 
 	cmd := exec.Command("docker-compose", "-f", "deployments/docker-compose.yml", "up", "-d", "--build")
@@ -92,35 +108,32 @@ func main() {
 		}
 		peers = append(peers, temp)
 		peerNum++
+
+		channelMap[username] = make(chan string)
+	}
+
+	// establish connections with peers
+	for _, p := range peers {
+		go connectionHandler(p, channelMap[p.username])
 	}
 
 	fmt.Println("\nNow you can send messages from each peer you want")
 	for {
 		for ok := true; ok; ok = getPort(peers, username, peerNum) == 1 {
-			fmt.Printf("\n\nInsert an existent peer's username\n>> ")
-			fmt.Scanln(&username)
+		fmt.Printf("\n\nInsert an existent peer's username\n>> ")
+		fmt.Scanln(&username)
 		}
-		port := getPort(peers, username, peerNum)
-		addr := getAddress(peers, username, peerNum)
-		service = addr + ":" + strconv.Itoa(int(port))
-		conn, err := net.Dial("tcp", service)
-		if err != nil {
-			errorHandler("Dial", err)
-		}
+		//port := getPort(peers, username, peerNum)
+		//addr := getAddress(peers, username, peerNum)
+		//service = addr + ":" + strconv.Itoa(int(port))
+		//conn, err := net.Dial("tcp", service)
+		//if err != nil {
+		//	errorHandler("Dial", err)
+		//}
 
 		fmt.Printf("Insert a message\n>> ")
 		scanner := bufio.NewScanner(os.Stdin)
 		scanner.Scan()
-		msg = scanner.Text()
-
-		_, err = conn.Write([]byte(msg))
-		if err != nil {
-			errorHandler("Write", err)
-		}
-
-		err = conn.Close()
-		if err != nil {
-			errorHandler("Conn", err)
-		}
+		channelMap[username] <- scanner.Text()
 	}
 }
