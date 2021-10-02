@@ -134,7 +134,10 @@ func getMessagesFromPeers() {
 	var err error
 
 	p := new(peer.Peer)
-
+	p.Hostname, err = os.Hostname()
+	if err != nil {
+		utils.ErrorHandler("Hostname", err)
+	}
 	// Register a new RPC server
 	server := rpc.NewServer()
 	err = server.RegisterName("Peer", p)
@@ -169,7 +172,7 @@ func main() {
 	if !ok {
 		log.Fatal("MEMBERS_NUM environment variable is not set")
 	}
-	membNum, err := strconv.Atoi(tmp)
+	membersNum, err := strconv.Atoi(tmp)
 	if err != nil {
 		utils.ErrorHandler("Atoi", err)
 	}
@@ -180,16 +183,12 @@ func main() {
 	registration()
 
 	go getMessagesFromPeers()
-	peer.ChFromPeers = make(chan utils.Sender, membNum*10)
+	peer.ChFromPeers = make(chan utils.Sender, membersNum*10)
 	chFromCL := make(chan string, 10)
 	go getMessagesToSend(chFromCL)
 	go sendMessages(algorithm, chFromCL)
 	for {
-		select {
-		// case msgToSend := <- chFromCL:
-		//	sendMessage(msgToSend, algorithm)
-		 case receivedStruct := <- peer.ChFromPeers:
-			 fmt.Printf("##%s##\t%s has written: %s", receivedStruct.Order, receivedStruct.Host, receivedStruct.Msg)
-		}
+		receivedStruct := <- peer.ChFromPeers
+		fmt.Printf("##%s##\t%s has written: %s", receivedStruct.Order, receivedStruct.Host, receivedStruct.Msg)
 	}
 }

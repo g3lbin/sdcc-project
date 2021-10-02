@@ -47,7 +47,7 @@ func main() {
 	if !ok {
 		log.Fatal("MEMBERS_NUM environment variable is not set")
 	}
-	sequencer.MembNum, err = strconv.Atoi(tmp)
+	sequencer.MembersNum, err = strconv.Atoi(tmp)
 	if err != nil {
 		utils.ErrorHandler("Atoi", err)
 	}

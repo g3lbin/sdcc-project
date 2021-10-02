@@ -13,6 +13,7 @@ services:
       context: ..
       dockerfile: deployments/sequencer/Dockerfile
     image: sequencer_service
+    container_name: sequencer
     profiles:
       - sequencer
     depends_on:
@@ -50,7 +51,16 @@ services:
       context: ..
       dockerfile: deployments/registration/Dockerfile
     image: registration_service
+    container_name: registry
     networks:
       - my_net
     ports:
       - ${REGISTRATION_PORT}
+  mongo:
+    image: mongo
+    container_name: mongodb
+    restart: always
+    networks:
+      - my_net
+    ports:
+      - 27017

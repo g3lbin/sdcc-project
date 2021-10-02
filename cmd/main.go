@@ -79,6 +79,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("Wait for initialization...\n")
+	for ok := true; ok; {
+		contJson, _ := cli.ContainerInspect(ctx, "registry")
+		ok = contJson.State.Status != "exited"
+	}
 	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
 	if err != nil {
 		panic(err)
@@ -86,6 +91,7 @@ func main() {
 	fmt.Println("Set the usernames for the chat participants")
 	for _, container := range containers {
 		if container.Image != "peer_service" {
+			fmt.Println(container.Status)
 			continue
 		}
 

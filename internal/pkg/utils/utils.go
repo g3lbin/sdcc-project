@@ -3,9 +3,10 @@ package utils
 import "log"
 
 type Sender struct {
-	Host string
-	Msg string
-	Order string
+	ID int			`bson:"_id"`
+	Host string		`bson:"host"`
+	Msg string		`bson:"msg"`
+	Order string	`bson:"order"`
 }
 
 func ErrorHandler(foo string, err error) {
