@@ -60,6 +60,8 @@ services:
     image: mongo
     container_name: mongodb
     restart: always
+    logging:
+      driver: "none"
     networks:
       - my_net
     ports:

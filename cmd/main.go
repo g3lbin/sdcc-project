@@ -4,48 +4,32 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"math/rand"
 	"net"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 )
 
 type peer struct {
-	username string
 	containerID string
-	ipAddr string
-	port uint16
+	publicIP    string
+	privateIP   string
+	port 		uint16
 }
 
 func errorHandler(foo string, err error) {
 	log.Fatalf("%s has failed: %s", foo, err)
 }
 
-func getPort(peers []peer, user string, num int) uint16 {
-	for i := 0; i < num; i++ {
-		if peers[i].username == user {
-			return peers[i].port
-		}
-	}
-	return 1
-}
-
-func getAddress(peers []peer, user string, num int) string {
-	for i := 0; i < num; i++ {
-		if peers[i].username == user {
-			return peers[i].ipAddr
-		}
-	}
-	return "undefined"
-}
-
 func connectionHandler(p peer, ch chan string) {
-	service := p.ipAddr + ":" + strconv.Itoa(int(p.port))
+	service := p.publicIP + ":" + strconv.Itoa(int(p.port))
 	conn, err := net.Dial("tcp", service)
 	if err != nil {
 		errorHandler("Dial", err)
@@ -60,18 +44,77 @@ func connectionHandler(p peer, ch chan string) {
 	}
 }
 
+func printLogs(cli *client.Client, ctx context.Context, containers []types.Container, r *strings.Replacer, contID string) {
+	for _, container := range containers {
+		if container.ID != contID {
+			continue
+		}
+		out, err := cli.ContainerLogs(ctx, contID, types.ContainerLogsOptions{ShowStdout: true})
+		if err != nil {
+			panic(err)
+		}
+		buf := new(strings.Builder)
+		_, err = io.Copy(buf, out)
+		if err != nil {
+			panic(err)
+		}
+		// check errors
+		fmt.Println(r.Replace(buf.String()))
+		out.Close()
+	}
+}
+
+func parseCmdLine() (bool, bool) {
+	verbose := false
+	delay := false
+
+	args := os.Args
+	length := len(os.Args)
+	if length > 1 {
+		for i := 1; i < length; i++ {
+			arg := args[i]
+			if arg == "-h" || arg == "--h" || arg == "-help" || arg == "--help" {
+				fmt.Println("Usage: ./launcher [OPTION]...")
+				fmt.Println("\nAvailable options:")
+				fmt.Println("\t-v, --verbose\t Print logging information")
+				fmt.Println("\t-d, --delay\t Enable an arbitrary delay in sending messages")
+				fmt.Println("\t-h, --help\t View this message")
+				os.Exit(0)
+			} else if arg == "-v" || arg == "--verbose" {
+				verbose = true
+			} else if arg == "-d" || arg == "--delay" {
+				delay = true
+			}
+		}
+	}
+	return verbose, delay
+}
+
 func main() {
-	var peers []peer
+	var peers map[string]peer
 	var channelMap map[string]chan string
+	var replaceList []string
 	var temp peer
 	var username string
+	var verbose bool
+	var delay bool
+	var min, max int
+
+	verbose, delay = parseCmdLine()
+	fmt.Println(verbose)
+	if delay {
+		rand.Seed(time.Now().UnixNano())
+		min = 0
+		max = 30
+	}
 
 	channelMap = make(map[string]chan string)
+	peers = make(map[string]peer)
 	peerNum := 0
 
-	cmd := exec.Command("docker-compose", "-f", "deployments/docker-compose.yml", "up", "-d", "--build")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	//cmd := exec.Command("docker-compose", "-f", "deployments/docker-compose.yml", "up", "-d", "--build")
+	//cmd.Stdout = os.Stdout
+	//cmd.Stderr = os.Stderr
 	// cmd.Run()
 
 	ctx := context.Background()
@@ -81,7 +124,10 @@ func main() {
 	}
 	fmt.Printf("Wait for initialization...\n")
 	for ok := true; ok; {
-		contJson, _ := cli.ContainerInspect(ctx, "registry")
+		contJson, err := cli.ContainerInspect(ctx, "registry")
+		if err != nil {
+			continue
+		}
 		ok = contJson.State.Status != "exited"
 	}
 	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
@@ -91,55 +137,86 @@ func main() {
 	fmt.Println("Set the usernames for the chat participants")
 	for _, container := range containers {
 		if container.Image != "peer_service" {
-			fmt.Println(container.Status)
 			continue
 		}
-
 		fmt.Printf("username #%d\n", peerNum + 1)
 		fmt.Printf(">> ")
 		fmt.Scanln(&username)
-		for strings.Contains(username, " ") {
-			fmt.Println("Insert an username which doesn't contain whitespace")
+		for strings.Contains(username, " ") || username == "" {
+			fmt.Println("Insert an non-empty username which doesn't contain whitespaces")
 			fmt.Printf(">> ")
 			fmt.Scanln(&username)
 		}
-		temp.username = username
+
+		replaceList = append(replaceList, container.NetworkSettings.Networks["deployments_my_net"].IPAddress)
+		replaceList = append(replaceList, username)
+
+		cli.ContainerRename(ctx, container.ID, username)
 		temp.containerID = container.ID
 		for _, port := range container.Ports {
 			if port.PrivatePort == 8888 {
-				temp.ipAddr = port.IP
+				temp.publicIP = port.IP
 				temp.port = port.PublicPort
 				break
 			}
 		}
-		peers = append(peers, temp)
+		peers[username] = temp
 		peerNum++
 
 		channelMap[username] = make(chan string)
 	}
+	r := strings.NewReplacer(replaceList...)
 
 	// establish connections with peers
-	for _, p := range peers {
-		go connectionHandler(p, channelMap[p.username])
+	for user := range peers {
+		go connectionHandler(peers[user], channelMap[user])
 	}
 
+	fmt.Println()
+	printLogs(cli, ctx, containers, r, "sequencer_service")
 	fmt.Println("\nNow you can send messages from each peer you want")
 	for {
-		for ok := true; ok; ok = getPort(peers, username, peerNum) == 1 {
-		fmt.Printf("\n\nInsert an existent peer's username\n>> ")
-		fmt.Scanln(&username)
-		}
-		//port := getPort(peers, username, peerNum)
-		//addr := getAddress(peers, username, peerNum)
-		//service = addr + ":" + strconv.Itoa(int(port))
-		//conn, err := net.Dial("tcp", service)
-		//if err != nil {
-		//	errorHandler("Dial", err)
-		//}
+		fmt.Println("\n************* Allowed Actions *************")
+		fmt.Println("1) Send a message from a participant")
+		fmt.Println("2) View messages received by a participant")
+		fmt.Println("3) Quit")
 
-		fmt.Printf("Insert a message\n>> ")
+		fmt.Printf("\nSelect an option\n>> ")
 		scanner := bufio.NewScanner(os.Stdin)
 		scanner.Scan()
-		channelMap[username] <- scanner.Text()
+		opt := scanner.Text()
+
+		if opt == "1" || opt == "2" {
+			for ok := false; !ok; {
+				fmt.Printf("\nEnter an existing username for a chat participant\n>> ")
+				fmt.Scanln(&username)
+				_, ok = peers[username]
+			}
+			if opt == "1" {
+				fmt.Printf("Insert a message\n>> ")
+				scanner = bufio.NewScanner(os.Stdin)
+				scanner.Scan()
+				if delay {
+					go func() {
+						msg := scanner.Text()
+						usr := username
+						r := rand.Intn(max - min + 1) + min
+						time.Sleep(time.Duration(r) * time.Second)
+						channelMap[usr] <- msg
+					}()
+				} else {
+					channelMap[username] <- scanner.Text()
+				}
+			} else {
+				printLogs(cli, ctx, containers, r, peers[username].containerID)
+			}
+		} else if opt == "3" {
+			fmt.Println("\nGood bye!")
+			os.Exit(0)
+		} else {
+			fmt.Println("Invalid option!")
+			continue
+		}
+		fmt.Println()
 	}
 }
