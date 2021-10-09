@@ -103,6 +103,8 @@ func sendMessages(algo string, ch chan string) {
 			}
 			sender.Msg = <-ch
 		}
+	} else if algo == "tot-ordered-decentr" {
+
 	}
 }
 
@@ -130,7 +132,7 @@ func getMessagesToSend(ch chan string) {
 	}
 }
 
-func getMessagesFromPeers() {
+func getMessagesFromPeers(algo string, membership []string) {
 	var err error
 
 	p := new(peer.Peer)
@@ -138,6 +140,8 @@ func getMessagesFromPeers() {
 	if err != nil {
 		utils.ErrorHandler("Hostname", err)
 	}
+	p.Algorithm = algo
+	p.Membersihp = membership
 	// Register a new RPC server
 	server := rpc.NewServer()
 	err = server.RegisterName("Peer", p)
@@ -179,16 +183,15 @@ func main() {
 
 	ip = retrieveIpAddr()
 
-	//membership = registration()
-	registration()
+	membership := registration()
 
-	go getMessagesFromPeers()
+	go getMessagesFromPeers(algorithm, membership)
 	peer.ChFromPeers = make(chan utils.Sender, membersNum*10)
 	chFromCL := make(chan string, 10)
 	go getMessagesToSend(chFromCL)
 	go sendMessages(algorithm, chFromCL)
 	for {
 		receivedStruct := <- peer.ChFromPeers
-		fmt.Printf("#%-5s [%s] %s", receivedStruct.Order, receivedStruct.Host, receivedStruct.Msg)
+		fmt.Printf("#%-5s [%s] %s", receivedStruct.Timestamp, receivedStruct.Host, receivedStruct.Msg)
 	}
 }

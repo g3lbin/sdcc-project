@@ -41,7 +41,7 @@ func setupConnections(sequencer *Sequencer) {
 func (sequencer *Sequencer) SendInMulticast(arg utils.Sender, res *int) error {
 	seqNumLock.Lock()
 	arg.ID = sequenceNumber
-	arg.Order = strconv.Itoa(arg.ID)
+	arg.Timestamp = strconv.Itoa(arg.ID)
 	sequenceNumber++
 	seqNumLock.Unlock()
 
