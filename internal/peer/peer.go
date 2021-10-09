@@ -189,6 +189,6 @@ func main() {
 	go sendMessages(algorithm, chFromCL)
 	for {
 		receivedStruct := <- peer.ChFromPeers
-		fmt.Printf("#%s\t[%s] %s", receivedStruct.Order, receivedStruct.Host, receivedStruct.Msg)
+		fmt.Printf("#%-5s [%s] %s", receivedStruct.Order, receivedStruct.Host, receivedStruct.Msg)
 	}
 }

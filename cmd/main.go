@@ -2,9 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
-	"io"
+	"github.com/docker/docker/pkg/stdcopy"
 	"log"
 	"math/rand"
 	"net"
@@ -28,7 +29,13 @@ func errorHandler(foo string, err error) {
 	log.Fatalf("%s has failed: %s", foo, err)
 }
 
-func connectionHandler(p peer, ch chan string) {
+func connectionHandler(p peer, ch chan string, delay bool) {
+	var min, max int
+
+	if delay {
+		min = 0
+		max = 30
+	}
 	service := p.publicIP + ":" + strconv.Itoa(int(p.port))
 	conn, err := net.Dial("tcp", service)
 	if err != nil {
@@ -37,6 +44,10 @@ func connectionHandler(p peer, ch chan string) {
 	defer conn.Close()
 	for {
 		msg := <- ch
+		if delay {
+			r := rand.Intn(max - min + 1) + min
+			time.Sleep(time.Duration(r) * time.Second)
+		}
 		_, err = conn.Write([]byte(msg + "\n"))
 		if err != nil {
 			errorHandler("Write", err)
@@ -53,8 +64,10 @@ func printLogs(cli *client.Client, ctx context.Context, containers []types.Conta
 		if err != nil {
 			panic(err)
 		}
-		buf := new(strings.Builder)
-		_, err = io.Copy(buf, out)
+		//buf := new(strings.Builder)
+		buf := &bytes.Buffer{}
+		_, err = stdcopy.StdCopy(buf, nil, out)
+		// _, err = io.Copy(buf, out)
 		if err != nil {
 			panic(err)
 		}
@@ -98,15 +111,14 @@ func main() {
 	var username string
 	var verbose bool
 	var delay bool
-	var min, max int
 
 	verbose, delay = parseCmdLine()
 	fmt.Println(verbose)
 	if delay {
 		rand.Seed(time.Now().UnixNano())
-		min = 0
-		max = 30
 	}
+
+	scanner := bufio.NewScanner(os.Stdin)
 
 	channelMap = make(map[string]chan string)
 	peers = make(map[string]peer)
@@ -139,17 +151,40 @@ func main() {
 		if container.Image != "peer_service" {
 			continue
 		}
-		fmt.Printf("username #%d\n", peerNum + 1)
-		fmt.Printf(">> ")
-		fmt.Scanln(&username)
-		for strings.Contains(username, " ") || username == "" {
-			fmt.Println("Insert an non-empty username which doesn't contain whitespaces")
+		for ok := true; ok; {
+			fmt.Printf("username #%d\n", peerNum + 1)
 			fmt.Printf(">> ")
-			fmt.Scanln(&username)
+			scanner.Scan()
+			username = scanner.Text()
+
+			for strings.Contains(username, " ") || username == "" {
+				fmt.Println("Insert an non-empty username which doesn't contain whitespaces")
+				fmt.Printf(">> ")
+				scanner.Scan()
+				username = scanner.Text()
+			}
+			if len(username) > 16 {
+				fmt.Println("The size of the username cannot exceed 16 characters!")
+				continue
+			}
+			ok = false
+			l := len(replaceList)
+			if l == 0 {
+				break
+			}
+			for i := 0; i < l/2; i++ {
+				if replaceList[2*i+1] == username {
+					ok = true
+					fmt.Println(("\nUsername already in use!"))
+					break
+				}
+			}
 		}
 
-		replaceList = append(replaceList, container.NetworkSettings.Networks["deployments_my_net"].IPAddress)
-		replaceList = append(replaceList, username)
+		replaceList = append(replaceList, container.NetworkSettings.Networks["deployments_my_net"].IPAddress + "]")
+		var b strings.Builder
+		fmt.Fprintf(&b, "%-17s", username + "]")
+		replaceList = append(replaceList, b.String())
 
 		cli.ContainerRename(ctx, container.ID, username)
 		temp.containerID = container.ID
@@ -163,13 +198,13 @@ func main() {
 		peers[username] = temp
 		peerNum++
 
-		channelMap[username] = make(chan string)
+		channelMap[username] = make(chan string, 100)
 	}
 	r := strings.NewReplacer(replaceList...)
 
 	// establish connections with peers
 	for user := range peers {
-		go connectionHandler(peers[user], channelMap[user])
+		go connectionHandler(peers[user], channelMap[user], delay)
 	}
 
 	fmt.Println()
@@ -182,31 +217,21 @@ func main() {
 		fmt.Println("3) Quit")
 
 		fmt.Printf("\nSelect an option\n>> ")
-		scanner := bufio.NewScanner(os.Stdin)
 		scanner.Scan()
 		opt := scanner.Text()
 
 		if opt == "1" || opt == "2" {
 			for ok := false; !ok; {
 				fmt.Printf("\nEnter an existing username for a chat participant\n>> ")
-				fmt.Scanln(&username)
+				scanner.Scan()
+				username = scanner.Text()
 				_, ok = peers[username]
 			}
 			if opt == "1" {
 				fmt.Printf("Insert a message\n>> ")
 				scanner = bufio.NewScanner(os.Stdin)
 				scanner.Scan()
-				if delay {
-					go func() {
-						msg := scanner.Text()
-						usr := username
-						r := rand.Intn(max - min + 1) + min
-						time.Sleep(time.Duration(r) * time.Second)
-						channelMap[usr] <- msg
-					}()
-				} else {
-					channelMap[username] <- scanner.Text()
-				}
+				channelMap[username] <- scanner.Text()
 			} else {
 				printLogs(cli, ctx, containers, r, peers[username].containerID)
 			}
