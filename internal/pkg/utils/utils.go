@@ -1,13 +1,21 @@
 package utils
 
-import "log"
+import (
+	"log"
+	"sync"
+)
 
 type Sender struct {
-	ID 			int		`bson:"_id"`
+	ID 			uint64	`bson:"_id"`
 	Host 		string	`bson:"host"`
 	Msg       	string	`bson:"msg"`
-	Timestamp 	string	`bson:"order"`
+	Timestamp 	[]uint64
 	Type 		string
+}
+
+type Time struct {
+	Clock []uint64
+	Lock  sync.Mutex
 }
 
 func ErrorHandler(foo string, err error) {

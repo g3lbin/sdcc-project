@@ -3,17 +3,17 @@ package main
 import (
 	"bufio"
 	"fmt"
+	peer "github.com/sdcc-project/internal/pkg/rpcpeer"
+	"github.com/sdcc-project/internal/pkg/utils"
 	"log"
 	"net"
 	"net/rpc"
 	"os"
 	"strconv"
-
-	peer "github.com/sdcc-project/internal/pkg/rpcpeer"
-	"github.com/sdcc-project/internal/pkg/utils"
 )
 
 var ip string
+var time *utils.Time
 
 func retrieveIpAddr() string {
 	var res string
@@ -75,8 +75,19 @@ func registration() []string {
 	return list
 }
 
-func sendMessages(algo string, ch chan string) {
+func sendMessages(algo string, chFromCL chan string, chAck chan *utils.Sender, membership []string, membersNum int) {
+	var sender *utils.Sender
 	var res int
+	var err error
+
+	select {
+	case msg := <-chFromCL:
+		sender = new(utils.Sender)
+		sender.Host = ip
+		sender.Msg = msg
+		sender.Type = "update"
+	case sender = <-chAck:
+	}
 
 	if algo == "tot-ordered-centr" {
 		port, ok := os.LookupEnv("SEQUENCER_PORT")
@@ -84,10 +95,6 @@ func sendMessages(algo string, ch chan string) {
 			log.Fatal("REGISTRATION_PORT environment variable is not set")
 		}
 		addr := "sequencer:" + port //address and port on which RPC server is listening
-
-		sender := new(utils.Sender)
-		sender.Host = ip
-		sender.Msg = <-ch
 
 		// Try to connect to addr
 		cl, err := rpc.Dial("tcp", addr)
@@ -101,10 +108,54 @@ func sendMessages(algo string, ch chan string) {
 			if err != nil {
 				utils.ErrorHandler("Call", err)
 			}
-			sender.Msg = <-ch
+			sender.Msg = <-chFromCL
 		}
 	} else if algo == "tot-ordered-decentr" {
+		sender.Type = "update"
+		sender.Timestamp = make([]uint64, 1)
 
+		port, ok:= os.LookupEnv("MULTICAST_PORT")
+		if !ok {
+			log.Fatal("MULTICAST_PORT environment variable is not set")
+		}
+
+		clients := make([]*rpc.Client, membersNum - 1)
+		i := 0
+		for _, member := range membership {
+			if member == ip {
+				continue
+			}
+			clients[i], err = rpc.Dial("tcp", member + ":" + port)
+			if err != nil {
+				utils.ErrorHandler("Dial", err)
+			}
+			i++
+		}
+		for {
+			if sender.Type == "update" {
+				// Update logical clock for 'send' event
+				time.Lock.Lock()
+				time.Clock[0]++
+				sender.Timestamp[0] = time.Clock[0]
+				time.Lock.Unlock()
+			}
+
+			peer.EnqueueMsg(*sender)				/* Send the message to the peer itself */
+			for i := 0; i < membersNum - 1; i++ {	/* Send the message to others */
+				// Call remote procedure
+				err = clients[i].Call("Peer.ReceiveMessage", sender, &res)
+				if err != nil {
+					utils.ErrorHandler("Call", err)
+				}
+			}
+			select {
+			case msg := <-chFromCL:
+				sender.Host = ip
+				sender.Msg = msg
+				sender.Type = "update"
+			case sender = <-chAck:
+			}
+		}
 	}
 }
 
@@ -141,7 +192,8 @@ func getMessagesFromPeers(algo string, membership []string) {
 		utils.ErrorHandler("Hostname", err)
 	}
 	p.Algorithm = algo
-	p.Membersihp = membership
+	p.Membership = membership
+	p.TimeStruct = time
 	// Register a new RPC server
 	server := rpc.NewServer()
 	err = server.RegisterName("Peer", p)
@@ -165,11 +217,15 @@ func getMessagesFromPeers(algo string, membership []string) {
 
 func main() {
 	var algorithm string
-	// var membership []string
+	var membership []string
 
+	time = new(utils.Time)
 	algorithm, ok := os.LookupEnv("MULTICAST_ALGORITHM")
 	if !ok {
 		log.Fatal("MULTICAST_ALGORITHM environment variable is not set")
+	}
+	if algorithm == "tot-ordered-decentr" {
+		time.Clock = append(time.Clock, 0)
 	}
 
 	tmp, ok := os.LookupEnv("MEMBERS_NUM")
@@ -183,13 +239,16 @@ func main() {
 
 	ip = retrieveIpAddr()
 
-	membership := registration()
+	membership = registration()
 
 	go getMessagesFromPeers(algorithm, membership)
+
 	peer.ChFromPeers = make(chan utils.Sender, membersNum*10)
+	peer.ChAck = make(chan *utils.Sender, membersNum*10)
 	chFromCL := make(chan string, 10)
+
 	go getMessagesToSend(chFromCL)
-	go sendMessages(algorithm, chFromCL)
+	go sendMessages(algorithm, chFromCL, peer.ChAck, membership, membersNum)
 	for {
 		receivedStruct := <- peer.ChFromPeers
 		fmt.Printf("#%-5s [%s] %s", receivedStruct.Timestamp, receivedStruct.Host, receivedStruct.Msg)

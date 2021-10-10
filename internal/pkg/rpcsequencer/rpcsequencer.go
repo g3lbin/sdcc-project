@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/rpc"
 	"os"
-	"strconv"
 	"sync"
 )
 
@@ -18,7 +17,7 @@ type Sequencer struct {
 
 var checkConnLock sync.Mutex
 var seqNumLock sync.Mutex
-var sequenceNumber = 0
+var sequenceNumber uint64 = 0
 
 func setupConnections(sequencer *Sequencer) {
 	// Setup all connections
@@ -41,7 +40,8 @@ func setupConnections(sequencer *Sequencer) {
 func (sequencer *Sequencer) SendInMulticast(arg utils.Sender, res *int) error {
 	seqNumLock.Lock()
 	arg.ID = sequenceNumber
-	arg.Timestamp = strconv.Itoa(arg.ID)
+	arg.Timestamp = make([]uint64, 1)
+	arg.Timestamp[0] = sequenceNumber
 	sequenceNumber++
 	seqNumLock.Unlock()
 
