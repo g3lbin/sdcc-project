@@ -2,8 +2,10 @@ package rpcpeer
 
 import (
 	"context"
+	"fmt"
 	"github.com/sdcc-project/internal/pkg/utils"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,86 +20,97 @@ type Peer struct {
 	Membership 	[]string
 	TimeStruct 	*utils.Time
 }
-
-type Message struct {
-	ID uint64				`bson:"_id"`
-	Timestamp struct {
-		host string			`bson:"host"`
-		clock []uint64		`bson:"clock"`
-	}
-	RcvdAck int
-	Content string			`bson:"content"`
+// strings.Trim(strings.Join(strings.Fields(fmt.Sprint(a)), delim), "[]")
+var datastoreHandler struct {
+	ctx context.Context
+	coll *mongo.Collection
 }
-
-var queue []*Message
+var queue []utils.Sender
+var ackForMessages map[string]int
 var queueLock sync.Mutex
 var expected uint64 = 0
 var last uint64 = 0
 var ChFromPeers chan utils.Sender
-var ChAck chan *utils.Sender
+var ChAck chan utils.Sender
 
-func EnqueueMsg(item utils.Sender) {
-	newMsg := new(Message)
-	newMsg.Timestamp.host = item.Host
-	newMsg.Timestamp.clock = item.Timestamp
-	newMsg.RcvdAck = 1
-	newMsg.Content = item.Msg
+func InitRpcPeer(hostname string) {
+	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb://mongo:27017"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	datastoreHandler.ctx, _ = context.WithTimeout(context.Background(), 10*time.Second)
+	err = client.Connect(datastoreHandler.ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	datastoreHandler.coll = client.Database(hostname).Collection("chat")
 
+	ackForMessages = make(map[string]int)
+}
+
+func EnqueueMsg(new utils.Sender, membersNum int, increment int) {
 	done := false
+	queueLock.Lock()
 	for i, msg := range queue {
-		if newMsg.Timestamp.clock[0] < msg.Timestamp.clock[0] ||
-			(newMsg.Timestamp.clock[0] == msg.Timestamp.clock[0] && newMsg.Timestamp.host < msg.Timestamp.host) {
-			tail := queue[i:]
-			queue = append([]*Message{newMsg}, queue[:i]...)
+		if new.Timestamp[0] < msg.Timestamp[0] ||
+			(new.Timestamp[0] == msg.Timestamp[0] && new.Host < msg.Host) {
+			tail := append([]utils.Sender{}, queue[i:]...)
+			queue = append(queue[:i], new)
 			queue = append(queue, tail...)
 
 			done = true
 			break
 		}
 	}
-	if !done {
-		queue = append(queue, newMsg)
+	if !done {	// Append new message at the end of queue
+		queue = append(queue, new)
 	}
+	submitAck(new, membersNum, increment)
+	// DA RIMUOVERE
+	for _, msg := range queue {
+		fmt.Println(msg)
+	}
+	queueLock.Unlock()
 }
 
-func submitAck(ctx context.Context, coll *mongo.Collection, ack utils.Sender, membersNum int) {
-	for i, msg := range queue {
-		if msg.Timestamp.host == ack.Host && msg.Timestamp.clock[0] == ack.Timestamp[0] {
-			msg.RcvdAck++
-			if msg.RcvdAck == membersNum {
-				msg.ID = expected
-				expected++
-				_, err := coll.InsertOne(ctx, msg)
-				if err != nil {
-					utils.ErrorHandler("InsertOne", err)
-				}
-				queue = append(queue[:i], queue[i+1:]...)
-			}
-		}
+func dequeue(msgId string) {
+	//for _, msg := range queue {
+	//	if msg.Host == ack.Host && msg.Timestamp[0] == ack.Timestamp[0] {
+	//if msg.RcvdAck == membersNum {
+	//	msg.ID = expected
+	//	expected++
+	//	_, err := coll.InsertOne(datastoreHandler.ctx, msg)
+	//	if err != nil {
+	//		utils.ErrorHandler("InsertOne", err)
+	//	}
+	//	queue = append(queue[:i], queue[i+1:]...)
+	//}
+	//	}
+	//}
+}
+
+func submitAck(ack utils.Sender, membersNum int, increment int) {
+	msgId := ack.Host + ":" + strings.Trim(strings.Join(strings.Fields(fmt.Sprint(ack.Timestamp)), ","), "[]")
+	if val, ok := ackForMessages[msgId]; ok {
+		ackForMessages[msgId] = val + increment
+	} else {
+		ackForMessages[msgId] = increment
+	}
+	if ackForMessages[msgId] == membersNum {
+		dequeue(msgId)
+		delete(ackForMessages, msgId)
 	}
 }
 
 func (p *Peer) ReceiveMessage(arg utils.Sender, res *int) error {
-	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb://mongo:27017"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	err = client.Connect(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer client.Disconnect(ctx)
-	chatCollection := client.Database(p.Hostname).Collection("chat")
-
 	if p.Algorithm == "tot-ordered-centr" {
-		_, err = chatCollection.InsertOne(ctx, arg)
+		_, err := datastoreHandler.coll.InsertOne(datastoreHandler.ctx, arg)
 		if err != nil {
 			utils.ErrorHandler("InsertOne", err)
 		}
 		for ok := true; ok; {
 			var res utils.Sender
-			err = chatCollection.FindOne(ctx, bson.D{{"_id", expected}}).Decode(&res)
+			err = datastoreHandler.coll.FindOne(datastoreHandler.ctx, bson.D{{"_id", expected}}).Decode(&res)
 			if err != nil {
 				// ErrNoDocuments means that the filter did not match any documents in
 				// the collection.
@@ -112,6 +125,7 @@ func (p *Peer) ReceiveMessage(arg utils.Sender, res *int) error {
 			}
 		}
 	} else if p.Algorithm == "tot-ordered-decentr" {
+		var res utils.Sender
 		if arg.Type == "update" {
 			// Update logical clock for 'receive' event
 			p.TimeStruct.Lock.Lock()
@@ -121,24 +135,22 @@ func (p *Peer) ReceiveMessage(arg utils.Sender, res *int) error {
 			p.TimeStruct.Clock[0]++
 			p.TimeStruct.Lock.Unlock()
 
-			queueLock.Lock()
-			EnqueueMsg(arg)
-			queueLock.Unlock()
+			EnqueueMsg(arg, len(p.Membership), 2)
 
-			res := new(utils.Sender)
 			res.Host = arg.Host
-			res.Timestamp = arg.Timestamp
+			res.Timestamp = make([]uint64, 1)
+			res.Timestamp[0] = arg.Timestamp[0]
 			res.Type = "ack"
 			ChAck <- res
 		} else {
 			queueLock.Lock()
-			submitAck(ctx, chatCollection, arg, len(p.Membership))
-			for last < expected {
-				var res utils.Sender
-				chatCollection.FindOne(ctx, bson.D{{"_id", last}}).Decode(&res)
-				ChFromPeers <- res
-				last++
-			}
+			submitAck(arg, len(p.Membership), 1)
+			//for last < expected {
+			//	var res utils.Sender
+			//	datastoreHandler.coll.FindOne(datastoreHandler.ctx, bson.D{{"_id", last}}).Decode(&res)
+			//	ChFromPeers <- res
+			//	last++
+			//}
 			queueLock.Unlock()
 		}
 	}

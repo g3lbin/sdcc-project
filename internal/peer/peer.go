@@ -75,14 +75,13 @@ func registration() []string {
 	return list
 }
 
-func sendMessages(algo string, chFromCL chan string, chAck chan *utils.Sender, membership []string, membersNum int) {
-	var sender *utils.Sender
+func sendMessages(algo string, chFromCL chan string, chAck chan utils.Sender, membership []string, membersNum int) {
+	var sender utils.Sender
 	var res int
 	var err error
 
 	select {
 	case msg := <-chFromCL:
-		sender = new(utils.Sender)
 		sender.Host = ip
 		sender.Msg = msg
 		sender.Type = "update"
@@ -104,16 +103,13 @@ func sendMessages(algo string, chFromCL chan string, chAck chan *utils.Sender, m
 		for {
 			// reply will store the RPC result
 			// Call remote procedure
-			err = cl.Call("Sequencer.SendInMulticast", sender, &res)
+			err = cl.Call("Sequencer.SendInMulticast", &sender, &res)
 			if err != nil {
 				utils.ErrorHandler("Call", err)
 			}
 			sender.Msg = <-chFromCL
 		}
 	} else if algo == "tot-ordered-decentr" {
-		sender.Type = "update"
-		sender.Timestamp = make([]uint64, 1)
-
 		port, ok:= os.LookupEnv("MULTICAST_PORT")
 		if !ok {
 			log.Fatal("MULTICAST_PORT environment variable is not set")
@@ -131,23 +127,27 @@ func sendMessages(algo string, chFromCL chan string, chAck chan *utils.Sender, m
 			}
 			i++
 		}
+
 		for {
 			if sender.Type == "update" {
+				sender.Timestamp = make([]uint64, 1)
 				// Update logical clock for 'send' event
 				time.Lock.Lock()
 				time.Clock[0]++
 				sender.Timestamp[0] = time.Clock[0]
 				time.Lock.Unlock()
+
+				peer.EnqueueMsg(sender, membersNum, 1)			/* Send the message to the peer itself */
 			}
 
-			peer.EnqueueMsg(*sender)				/* Send the message to the peer itself */
 			for i := 0; i < membersNum - 1; i++ {	/* Send the message to others */
 				// Call remote procedure
-				err = clients[i].Call("Peer.ReceiveMessage", sender, &res)
+				err = clients[i].Call("Peer.ReceiveMessage", &sender, &res)
 				if err != nil {
 					utils.ErrorHandler("Call", err)
 				}
 			}
+
 			select {
 			case msg := <-chFromCL:
 				sender.Host = ip
@@ -194,6 +194,8 @@ func getMessagesFromPeers(algo string, membership []string) {
 	p.Algorithm = algo
 	p.Membership = membership
 	p.TimeStruct = time
+
+	peer.InitRpcPeer(ip)
 	// Register a new RPC server
 	server := rpc.NewServer()
 	err = server.RegisterName("Peer", p)
@@ -244,7 +246,7 @@ func main() {
 	go getMessagesFromPeers(algorithm, membership)
 
 	peer.ChFromPeers = make(chan utils.Sender, membersNum*10)
-	peer.ChAck = make(chan *utils.Sender, membersNum*10)
+	peer.ChAck = make(chan utils.Sender, membersNum*10)
 	chFromCL := make(chan string, 10)
 
 	go getMessagesToSend(chFromCL)
