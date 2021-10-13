@@ -142,7 +142,6 @@ func sendMessages(algo string, chFromCL chan string, chAck chan utils.Sender, me
 				// Update logical clock for 'receive' event
 				time.Lock.Lock()
 				time.Clock[0]++
-				sender.Timestamp[0] = time.Clock[0]
 				time.Lock.Unlock()
 			}
 
