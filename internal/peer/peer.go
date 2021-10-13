@@ -10,6 +10,7 @@ import (
 	"net/rpc"
 	"os"
 	"strconv"
+	"strings"
 )
 
 var ip string
@@ -138,6 +139,11 @@ func sendMessages(algo string, chFromCL chan string, chAck chan utils.Sender, me
 				time.Lock.Unlock()
 
 				peer.EnqueueMsg(sender, membersNum, 1)			/* Send the message to the peer itself */
+				// Update logical clock for 'receive' event
+				time.Lock.Lock()
+				time.Clock[0]++
+				sender.Timestamp[0] = time.Clock[0]
+				time.Lock.Unlock()
 			}
 
 			for i := 0; i < membersNum - 1; i++ {	/* Send the message to others */
@@ -187,7 +193,7 @@ func getMessagesFromPeers(algo string, membership []string) {
 	var err error
 
 	p := new(peer.Peer)
-	p.Hostname, err = os.Hostname()
+	hostname, err := os.Hostname()
 	if err != nil {
 		utils.ErrorHandler("Hostname", err)
 	}
@@ -195,7 +201,7 @@ func getMessagesFromPeers(algo string, membership []string) {
 	p.Membership = membership
 	p.TimeStruct = time
 
-	peer.InitRpcPeer(ip)
+	peer.InitRpcPeer(hostname, membership)
 	// Register a new RPC server
 	server := rpc.NewServer()
 	err = server.RegisterName("Peer", p)
@@ -253,6 +259,7 @@ func main() {
 	go sendMessages(algorithm, chFromCL, peer.ChAck, membership, membersNum)
 	for {
 		receivedStruct := <- peer.ChFromPeers
-		fmt.Printf("#%-5s [%s] %s", receivedStruct.Timestamp, receivedStruct.Host, receivedStruct.Msg)
+		order := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(receivedStruct.Timestamp)), ","), "[]")
+		fmt.Printf("<%-5s [%s] %s", order+">", receivedStruct.Host, receivedStruct.Msg)
 	}
 }
