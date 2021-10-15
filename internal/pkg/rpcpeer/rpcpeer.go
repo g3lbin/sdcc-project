@@ -14,9 +14,11 @@ import (
 )
 
 type Peer struct {
+	Ip 			string
 	Algorithm	string
 	Membership 	[]string
 	TimeStruct 	*utils.Time
+	MembersId 	map[string]int
 }
 // strings.Trim(strings.Join(strings.Fields(fmt.Sprint(a)), delim), "[]")
 var datastoreHandler struct {
@@ -51,40 +53,50 @@ func InitRpcPeer(hostname string, membership []string) {
 	}
 }
 
-func EnqueueMsg(new utils.Sender, membersNum int, increment int) {
-	done := false
+func EnqueueMsg(algo string, new utils.Sender, args ...int) {
 	queueLock.Lock()
-	for i, msg := range queue {
-		if new.Timestamp[0] < msg.Timestamp[0] ||
-			(new.Timestamp[0] == msg.Timestamp[0] && new.Host < msg.Host) {
-			tail := append([]utils.Sender{}, queue[i:]...)
-			queue = append(queue[:i], new)
-			queue = append(queue, tail...)
+	if algo == "tot-ordered-decentr" {
+		done := false
+		membersNum := args[0]
+		increment := args[1]
+		for i, msg := range queue {
+			if new.Timestamp[0] < msg.Timestamp[0] ||
+				(new.Timestamp[0] == msg.Timestamp[0] && new.Host < msg.Host) {
+				tail := append([]utils.Sender{}, queue[i:]...)
+				queue = append(queue[:i], new)
+				queue = append(queue, tail...)
 
-			done = true
-			break
+				done = true
+				break
+			}
 		}
-	}
-	if !done {	// Append new message at the end of queue
+		if !done { // Append new message at the end of queue
+			queue = append(queue, new)
+		}
+
+		if val, ok := messagesPerPeer[new.Host]; ok {
+			messagesPerPeer[new.Host] = val + 1
+		} else {
+			messagesPerPeer[new.Host] = 1
+		}
+		submitAck(new, membersNum, increment)
+	} else if algo == "causally-ordered-decentr" {
 		queue = append(queue, new)
 	}
-
-	if val, ok := messagesPerPeer[new.Host]; ok {
-		messagesPerPeer[new.Host] = val + 1
-	} else {
-		messagesPerPeer[new.Host] = 1
-	}
-	submitAck(new, membersNum, increment)
 	queueLock.Unlock()
 }
 
-func dequeue() {
-	head := queue[0]
-	messagesPerPeer[head.Host]--
-	if len(queue) == 1 {
-		queue = []utils.Sender{}
-	} else {
-		queue = queue[1:]
+func dequeue(algo string, index ...int) {
+	if algo == "tot-ordered-decentr" {
+		head := queue[0]
+		messagesPerPeer[head.Host]--
+		if len(queue) == 1 {
+			queue = []utils.Sender{}
+		} else {
+			queue = queue[1:]
+		}
+	} else if algo == "causally-ordered-decentr" {
+		queue = append(queue[:index[0]], queue[index[0]+1:]...)
 	}
 }
 
@@ -142,7 +154,7 @@ func (p *Peer) ReceiveMessage(arg utils.Sender, res *int) error {
 			p.TimeStruct.Clock[0]++
 			p.TimeStruct.Lock.Unlock()
 
-			EnqueueMsg(arg, len(p.Membership), 2)
+			EnqueueMsg(p.Algorithm, arg, len(p.Membership), 2)
 
 			ack.Host = arg.Host
 			ack.Timestamp = make([]uint64, 1)
@@ -164,7 +176,7 @@ func (p *Peer) ReceiveMessage(arg utils.Sender, res *int) error {
 			}
 			headId := headOfQueue.Host + ":" + strings.Trim(strings.Join(strings.Fields(fmt.Sprint(headOfQueue.Timestamp)), ","), "[]")
 			if ackForMessages[headId] == len(p.Membership) && checkMsgForEachPeer(p.Membership) {
-				dequeue()
+				dequeue(p.Algorithm)
 				delete(ackForMessages, headId)
 
 				headOfQueue.ID = expected
@@ -185,8 +197,70 @@ func (p *Peer) ReceiveMessage(arg utils.Sender, res *int) error {
 			last++
 		}
 		queueLock.Unlock()
+	} else if p.Algorithm == "causally-ordered-decentr" {
+		acceptableMsg := true
+		p.TimeStruct.Lock.Lock()
+		for i := 0; i < len(p.Membership); i++ {
+			if (i != p.MembersId[arg.Host] && arg.Timestamp[i] > p.TimeStruct.Clock[i]) ||
+				(i == p.MembersId[arg.Host] && arg.Timestamp[i] != p.TimeStruct.Clock[i] + 1) {
+				acceptableMsg = false
+				break
+			}
+		}
+		p.TimeStruct.Lock.Unlock()
+		if !acceptableMsg {
+			EnqueueMsg(p.Algorithm, arg)
+		} else {
+			VectDelivery(arg, p.TimeStruct, p.MembersId, true)
+		}
 	}
 	*res = 1
 
 	return nil
+}
+
+func VectDelivery(new utils.Sender, time *utils.Time, membersId map[string]int, incClock bool) {
+	algorithm := "causally-ordered-decentr"
+	// Deliver new message
+	if incClock {
+		time.Lock.Lock()
+		time.Clock[membersId[new.Host]]++
+		time.Lock.Unlock()
+	}
+	queueLock.Lock()
+	new.ID = expected
+	expected++
+	queueLock.Unlock()
+	_, err := datastoreHandler.coll.InsertOne(datastoreHandler.ctx, new)
+	if err != nil {
+		utils.ErrorHandler("InsertOne", err)
+	}
+	ChFromPeers <- new
+	// Check for others to deliver
+	queueLock.Lock()
+	for j, msg := range queue {
+		acceptableMsg := true
+		time.Lock.Lock()
+		for i := 0; i < len(membersId); i++ {
+			if (i != membersId[msg.Host] && msg.Timestamp[i] > time.Clock[i]) ||
+				(i == membersId[msg.Host] && msg.Timestamp[i] != time.Clock[i] + 1) {
+				acceptableMsg = false
+				break
+			}
+		}
+		if acceptableMsg {
+			time.Clock[membersId[msg.Host]]++
+		}
+		time.Lock.Unlock()
+
+		msg.ID = expected
+		expected++
+		_, err := datastoreHandler.coll.InsertOne(datastoreHandler.ctx, msg)
+		if err != nil {
+			utils.ErrorHandler("InsertOne", err)
+		}
+		dequeue(algorithm, j)
+		ChFromPeers <- msg
+	}
+	queueLock.Unlock()
 }

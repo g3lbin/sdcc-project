@@ -14,6 +14,7 @@ import (
 )
 
 var ip string
+var membersId map[string]int
 var time *utils.Time
 
 func retrieveIpAddr() string {
@@ -110,7 +111,7 @@ func sendMessages(algo string, chFromCL chan string, chAck chan utils.Sender, me
 			}
 			sender.Msg = <-chFromCL
 		}
-	} else if algo == "tot-ordered-decentr" {
+	} else {
 		port, ok:= os.LookupEnv("MULTICAST_PORT")
 		if !ok {
 			log.Fatal("MULTICAST_PORT environment variable is not set")
@@ -130,7 +131,7 @@ func sendMessages(algo string, chFromCL chan string, chAck chan utils.Sender, me
 		}
 
 		for {
-			if sender.Type == "update" {
+			if sender.Type == "update" && algo == "tot-ordered-decentr" {
 				sender.Timestamp = make([]uint64, 1)
 				// Update logical clock for 'send' event
 				time.Lock.Lock()
@@ -138,11 +139,22 @@ func sendMessages(algo string, chFromCL chan string, chAck chan utils.Sender, me
 				sender.Timestamp[0] = time.Clock[0]
 				time.Lock.Unlock()
 
-				peer.EnqueueMsg(sender, membersNum, 1)			/* Send the message to the peer itself */
+				peer.EnqueueMsg(algo, sender, membersNum, 1)			/* Send the message to the peer itself */
 				// Update logical clock for 'receive' event
 				time.Lock.Lock()
 				time.Clock[0]++
 				time.Lock.Unlock()
+			} else if algo == "causally-ordered-decentr" {
+				sender.Timestamp = make([]uint64, membersNum)
+				// Update vectorial clock for 'send' event
+				time.Lock.Lock()
+				time.Clock[membersId[ip]]++
+				for i := 0; i < membersNum; i++ {
+					sender.Timestamp[i] = time.Clock[i]
+				}
+				time.Lock.Unlock()
+
+				peer.VectDelivery(sender, time, membersId, false)	/* Send the message to the peer itself */
 			}
 
 			for i := 0; i < membersNum - 1; i++ {	/* Send the message to others */
@@ -196,9 +208,11 @@ func getMessagesFromPeers(algo string, membership []string) {
 	if err != nil {
 		utils.ErrorHandler("Hostname", err)
 	}
+	p.Ip = ip
 	p.Algorithm = algo
 	p.Membership = membership
 	p.TimeStruct = time
+	p.MembersId = membersId
 
 	peer.InitRpcPeer(hostname, membership)
 	// Register a new RPC server
@@ -226,15 +240,6 @@ func main() {
 	var algorithm string
 	var membership []string
 
-	time = new(utils.Time)
-	algorithm, ok := os.LookupEnv("MULTICAST_ALGORITHM")
-	if !ok {
-		log.Fatal("MULTICAST_ALGORITHM environment variable is not set")
-	}
-	if algorithm == "tot-ordered-decentr" {
-		time.Clock = append(time.Clock, 0)
-	}
-
 	tmp, ok := os.LookupEnv("MEMBERS_NUM")
 	if !ok {
 		log.Fatal("MEMBERS_NUM environment variable is not set")
@@ -244,14 +249,30 @@ func main() {
 		utils.ErrorHandler("Atoi", err)
 	}
 
+	time = new(utils.Time)
+	algorithm, ok = os.LookupEnv("MULTICAST_ALGORITHM")
+	if !ok {
+		log.Fatal("MULTICAST_ALGORITHM environment variable is not set")
+	}
+	if algorithm == "tot-ordered-decentr" {
+		time.Clock = append(time.Clock, 0)
+		peer.ChAck = make(chan utils.Sender, membersNum*10)
+	} else if algorithm == "causally-ordered-decentr" {
+		time.Clock = make([]uint64, membersNum)
+	}
+
 	ip = retrieveIpAddr()
 
 	membership = registration()
+	// Assign numerical id to peers
+	membersId = make(map[string]int)
+	for i, member := range membership {
+		membersId[member] = i
+	}
 
 	go getMessagesFromPeers(algorithm, membership)
 
 	peer.ChFromPeers = make(chan utils.Sender, membersNum*10)
-	peer.ChAck = make(chan utils.Sender, membersNum*10)
 	chFromCL := make(chan string, 10)
 
 	go getMessagesToSend(chFromCL)
