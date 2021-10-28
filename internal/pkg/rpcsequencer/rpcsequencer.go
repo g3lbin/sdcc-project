@@ -2,31 +2,32 @@ package rpcsequencer
 
 import (
 	"github.com/sdcc-project/internal/pkg/utils"
-	"log"
 	"net/rpc"
-	"os"
 	"sync"
 )
+
+type SeqEnv struct {
+	MembersNum int
+	RegistrationPort string
+	ListeningPort string
+	PeerPort string
+}
 
 type Sequencer struct {
 	Membership []string
 	Clients    []*rpc.Client
-	MembersNum int
-	SetupConn  bool
+	Env SeqEnv
 }
 
-var checkConnLock sync.Mutex
-var seqNumLock sync.Mutex
-var sequenceNumber uint64 = 0
+var doOnce sync.Once							// execute a statement only first time (concurrency safe)
+var seqNumLock sync.Mutex						// lock to synchronize accesses to sequenceNumber
+var sequenceNumber uint64 = 0					// sequence number to tag messages
 
+// setupConnections establishes the connections with all peers. This function should be run only once
 func setupConnections(sequencer *Sequencer) {
 	// Setup all connections
-	port, ok := os.LookupEnv("PEER_PORT")
-	if !ok {
-		log.Fatal("PEER_PORT environment variable is not set")
-	}
-	for i := 0; i < sequencer.MembersNum; i++ {
-		addr := sequencer.Membership[i] + ":" + port // address and port on which RPC server is listening
+	for i := 0; i < sequencer.Env.MembersNum; i++ {
+		addr := sequencer.Membership[i] + ":" + sequencer.Env.PeerPort // address and port on which RPC server is listening
 		// Try to connect to addr
 		cl, err := rpc.Dial("tcp", addr)
 		if err != nil {
@@ -34,9 +35,9 @@ func setupConnections(sequencer *Sequencer) {
 		}
 		sequencer.Clients = append(sequencer.Clients, cl)
 	}
-	sequencer.SetupConn = false
 }
 
+// SendInMulticast sends received message to all peers
 func (sequencer *Sequencer) SendInMulticast(arg utils.Sender, res *int) error {
 	seqNumLock.Lock()
 	arg.ID = sequenceNumber
@@ -45,20 +46,17 @@ func (sequencer *Sequencer) SendInMulticast(arg utils.Sender, res *int) error {
 	sequenceNumber++
 	seqNumLock.Unlock()
 
-	checkConnLock.Lock()
-	if sequencer.SetupConn {
+	doOnce.Do(func() {						// setup connections only first time
 		setupConnections(sequencer)
-	}
-	checkConnLock.Unlock()
-	for i := 0; i < sequencer.MembersNum; i++ {
-		// Call remote procedure
+	})
+	// send received message to all peers
+	for i := 0; i < sequencer.Env.MembersNum; i++ {
+		// call remote procedure
 		err := sequencer.Clients[i].Call("Peer.ReceiveMessage", arg, res)
 		if err != nil {
 			utils.ErrorHandler("Call", err)
 		}
 	}
-
-	*res = 0
 
 	return nil
 }
