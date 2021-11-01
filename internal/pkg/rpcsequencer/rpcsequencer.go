@@ -2,43 +2,29 @@ package rpcsequencer
 
 import (
 	"github.com/sdcc-project/internal/pkg/utils"
-	"net/rpc"
 	"sync"
 )
 
 type SeqEnv struct {
-	MembersNum int
+	MembersNum       int
+	Delay            int
 	RegistrationPort string
-	ListeningPort string
-	PeerPort string
+	ListeningPort    string
+	PeerPort         string
 }
 
 type Sequencer struct {
 	Membership []string
-	Clients    []*rpc.Client
-	Env SeqEnv
+	Env        SeqEnv
+	chPerPeer []chan utils.Message // channels to send messages to each rpcHandler
 }
 
-var doOnce sync.Once							// execute a statement only first time (concurrency safe)
-var seqNumLock sync.Mutex						// lock to synchronize accesses to sequenceNumber
-var sequenceNumber uint64 = 0					// sequence number to tag messages
-
-// setupConnections establishes the connections with all peers. This function should be run only once
-func setupConnections(sequencer *Sequencer) {
-	// Setup all connections
-	for i := 0; i < sequencer.Env.MembersNum; i++ {
-		addr := sequencer.Membership[i] + ":" + sequencer.Env.PeerPort // address and port on which RPC server is listening
-		// Try to connect to addr
-		cl, err := rpc.Dial("tcp", addr)
-		if err != nil {
-			utils.ErrorHandler("Dial", err)
-		}
-		sequencer.Clients = append(sequencer.Clients, cl)
-	}
-}
+var doOnce sync.Once          // execute a statement only first time (concurrency safe)
+var seqNumLock sync.Mutex     // lock to synchronize accesses to sequenceNumber
+var sequenceNumber uint64 = 0 // sequence number to tag messages
 
 // SendInMulticast sends received message to all peers
-func (sequencer *Sequencer) SendInMulticast(arg utils.Sender, res *int) error {
+func (sequencer *Sequencer) SendInMulticast(arg utils.Message, res *int) error {
 	seqNumLock.Lock()
 	arg.ID = sequenceNumber
 	arg.Timestamp = make([]uint64, 1)
@@ -46,16 +32,18 @@ func (sequencer *Sequencer) SendInMulticast(arg utils.Sender, res *int) error {
 	sequenceNumber++
 	seqNumLock.Unlock()
 
-	doOnce.Do(func() {						// setup connections only first time
-		setupConnections(sequencer)
+	// establish the connection with all peers (only the first time)
+	doOnce.Do(func() {
+		sequencer.chPerPeer = make([]chan utils.Message, sequencer.Env.MembersNum)
+		for i := 0; i < sequencer.Env.MembersNum; i++ {
+			serviceAddr := sequencer.Membership[i] + ":" + sequencer.Env.PeerPort // address and port on which RPC server is listening
+			sequencer.chPerPeer[i] = make(chan utils.Message, 10*sequencer.Env.MembersNum)
+			go utils.RpcHandler(serviceAddr, "Peer.ReceiveMessage", sequencer.chPerPeer[i], sequencer.Env.Delay)
+		}
 	})
 	// send received message to all peers
 	for i := 0; i < sequencer.Env.MembersNum; i++ {
-		// call remote procedure
-		err := sequencer.Clients[i].Call("Peer.ReceiveMessage", arg, res)
-		if err != nil {
-			utils.ErrorHandler("Call", err)
-		}
+		sequencer.chPerPeer[i] <- arg
 	}
 
 	return nil

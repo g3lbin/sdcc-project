@@ -16,9 +16,9 @@ import (
 var wg sync.WaitGroup
 
 type regEnv struct {
-	membersNum int
+	membersNum    int
 	listeningPort string
-	algorithm string
+	algorithm     string
 }
 
 // setEnvironment reads the environment variables and fill the regEnv struct with the read values
@@ -52,7 +52,7 @@ func main() {
 	var err error
 
 	env := new(regEnv)
-	setEnvironment(env)										// retrieve info from environment variables
+	setEnvironment(env) // retrieve info from environment variables
 
 	registry := new(lib.Registry)
 	registry.MembersNum = env.membersNum
@@ -66,19 +66,19 @@ func main() {
 	}
 
 	// listen for incoming messages on port LISTENING_PORT
-	lis, err := net.Listen("tcp", ":" + env.listeningPort)
+	lis, err := net.Listen("tcp", ":"+env.listeningPort)
 	if err != nil {
 		utils.ErrorHandler("Listen", err)
 	}
 
 	requestsNum = registry.MembersNum
-	if env.algorithm == "tot-ordered-centr" {
-		requestsNum++										// expect a request also from sequencer
+	if env.algorithm == utils.ALGO1 {
+		requestsNum++ // expect a request also from sequencer
 	}
 
 	fmt.Printf("Registration service on port %s...\n", env.listeningPort)
-	wg.Add(requestsNum)										// create a waitgroup of requestNum members
-	for i := 0; i < requestsNum; i++ {						// serve exactly requestNum requests
+	wg.Add(requestsNum)                // create a waitgroup of requestNum members
+	for i := 0; i < requestsNum; i++ { // serve exactly requestNum requests
 		go func() {
 			conn, err := lis.Accept()
 			if err != nil {
@@ -86,8 +86,8 @@ func main() {
 			}
 			server.ServeConn(conn)
 			conn.Close()
-			wg.Done()										// signal the end of the service
+			wg.Done() // signal the end of the service
 		}()
 	}
-	wg.Wait()												// wait for all connection and exit
+	wg.Wait() // wait for all connection and exit
 }

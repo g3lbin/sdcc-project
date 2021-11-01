@@ -9,6 +9,7 @@ services:
       - REGISTRATION_PORT=${REGISTRATION_PORT}
       - LISTENING_PORT=${SEQUENCER_PORT}
       - PEER_PORT=${MULTICAST_PORT}
+      - DELAY=${DELAY}
     build:
       context: ..
       dockerfile: deployments/sequencer/Dockerfile
@@ -30,6 +31,7 @@ services:
       - SEQUENCER_PORT=${SEQUENCER_PORT}
       - CONTROL_PORT=${CONTROL_PORT}
       - MULTICAST_ALGORITHM=${MULTI_ALGO}
+      - DELAY=${DELAY}
     build:
       context: ..
       dockerfile: deployments/peer/Dockerfile

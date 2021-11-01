@@ -5,37 +5,28 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"strconv"
 	"strings"
-	"time"
-
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/client"
 )
 
 type peer struct {
 	containerID string
 	publicIP    string
 	privateIP   string
-	port 		uint16
+	port        uint16
 }
 
 func errorHandler(foo string, err error) {
 	log.Fatalf("%s has failed: %s", foo, err)
 }
 
-func connectionHandler(p peer, ch chan string, delay bool) {
-	var min, max int
-
-	if delay {
-		min = 0
-		max = 30
-	}
+func connectionHandler(p peer, ch chan string) {
 	service := p.publicIP + ":" + strconv.Itoa(int(p.port))
 	conn, err := net.Dial("tcp", service)
 	if err != nil {
@@ -43,11 +34,8 @@ func connectionHandler(p peer, ch chan string, delay bool) {
 	}
 	defer conn.Close()
 	for {
-		msg := <- ch
-		if delay {
-			r := rand.Intn(max - min + 1) + min
-			time.Sleep(time.Duration(r) * time.Second)
-		}
+		msg := <-ch
+
 		_, err = conn.Write([]byte(msg + "\n"))
 		if err != nil {
 			errorHandler("Write", err)
@@ -64,10 +52,10 @@ func printLogs(cli *client.Client, ctx context.Context, containers []types.Conta
 		if err != nil {
 			panic(err)
 		}
-		//buf := new(strings.Builder)
+
 		buf := &bytes.Buffer{}
 		_, err = stdcopy.StdCopy(buf, nil, out)
-		// _, err = io.Copy(buf, out)
+
 		if err != nil {
 			panic(err)
 		}
@@ -77,9 +65,8 @@ func printLogs(cli *client.Client, ctx context.Context, containers []types.Conta
 	}
 }
 
-func parseCmdLine() (bool, bool) {
+func parseCmdLine() bool {
 	verbose := false
-	delay := false
 
 	args := os.Args
 	length := len(os.Args)
@@ -90,39 +77,98 @@ func parseCmdLine() (bool, bool) {
 				fmt.Println("Usage: ./launcher [OPTION]...")
 				fmt.Println("\nAvailable options:")
 				fmt.Println("\t-v, --verbose\t Print logging information")
-				fmt.Println("\t-d, --delay\t Enable an arbitrary delay in sending messages")
 				fmt.Println("\t-h, --help\t View this message")
 				os.Exit(0)
-			} else if arg == "-v" || arg == "--verbose" {
+			} else if arg == "-v" || arg == "-V" || arg == "--verbose" {
 				verbose = true
-			} else if arg == "-d" || arg == "--delay" {
-				delay = true
 			}
 		}
 	}
-	return verbose, delay
+	return verbose
+}
+
+func verboseLoop(
+	scanner *bufio.Scanner,
+	peers map[string]peer,
+	channelMap map[string]chan string,
+	cli *client.Client,
+	ctx context.Context,
+	containers []types.Container,
+	r *strings.Replacer,
+) {
+	var username string
+
+	for {
+		fmt.Println("\n************* Allowed Actions *************")
+		fmt.Println("1) Send a message from a participant")
+		fmt.Println("2) View messages received from a participant")
+		fmt.Println("3) Quit")
+
+		fmt.Printf("\nSelect an option\n>> ")
+		scanner.Scan()
+		opt := scanner.Text()
+
+		if opt == "1" || opt == "2" {
+			for ok := false; !ok; {
+				fmt.Printf("\nEnter an existing username for a communication participant\n>> ")
+				scanner.Scan()
+				username = scanner.Text()
+				_, ok = peers[username]
+			}
+			if opt == "1" {
+				fmt.Printf("Insert a message\n>> ")
+				scanner = bufio.NewScanner(os.Stdin)
+				scanner.Scan()
+				channelMap[username] <- scanner.Text()
+				fmt.Printf("\nMessage succesfully sent!\n")
+			} else {
+				printLogs(cli, ctx, containers, r, peers[username].containerID)
+			}
+		} else if opt == "3" {
+			fmt.Println("\nGood bye!")
+			os.Exit(0)
+		} else {
+			fmt.Println("Invalid option!")
+			continue
+		}
+		fmt.Println()
+	}
+}
+
+func simpleLoop(scanner *bufio.Scanner, peers map[string]peer, channelMap map[string]chan string) {
+	var username string
+
+	for {
+		for ok := false; !ok; {
+			fmt.Printf("\nEnter an existing username for a chat participant\n>> ")
+			scanner.Scan()
+			username = scanner.Text()
+			_, ok = peers[username]
+		}
+		fmt.Printf("Insert a message\n>> ")
+		scanner = bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		channelMap[username] <- scanner.Text()
+		fmt.Printf("\nMessage succesfully sent!\n\n")
+	}
 }
 
 func main() {
 	var peers map[string]peer
-	var channelMap map[string]chan string
-	var replaceList []string
+	var channelMap map[string]chan string // map to send messages to the connectionHandler of each peer
+	var replaceList []string // list to replace peers' IP addresses with usernames
 	var temp peer
 	var username string
 	var verbose bool
-	var delay bool
+	var peerNum = 0 // index of peers (starts from 0)
 
-	verbose, delay = parseCmdLine()
-	fmt.Println(verbose)
-	if delay {
-		rand.Seed(time.Now().UnixNano())
-	}
-
-	scanner := bufio.NewScanner(os.Stdin)
+	verbose = parseCmdLine()
 
 	channelMap = make(map[string]chan string)
 	peers = make(map[string]peer)
-	peerNum := 0
+
+	// create the scanner to read lines from stdin
+	scanner := bufio.NewScanner(os.Stdin)
 
 	//cmd := exec.Command("docker-compose", "-f", "deployments/docker-compose.yml", "up", "-d", "--build")
 	//cmd.Stdout = os.Stdout
@@ -134,7 +180,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	// wait until the "registry" container has exited (so the peers' registration has completed)
 	fmt.Printf("Wait for initialization...\n")
+	// active wait
 	for ok := true; ok; {
 		contJson, err := cli.ContainerInspect(ctx, "registry")
 		if err != nil {
@@ -142,17 +190,18 @@ func main() {
 		}
 		ok = contJson.State.Status != "exited"
 	}
+	// assign a username to each peer
 	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Set the usernames for the chat participants")
+	fmt.Printf("\nSet the usernames for the communication participants\n")
 	for _, container := range containers {
 		if container.Image != "peer_service" {
 			continue
 		}
 		for ok := true; ok; {
-			fmt.Printf("username #%d\n", peerNum + 1)
+			fmt.Printf("username #%d\n", peerNum+1)
 			fmt.Printf(">> ")
 			scanner.Scan()
 			username = scanner.Text()
@@ -180,12 +229,12 @@ func main() {
 				}
 			}
 		}
-
-		replaceList = append(replaceList, container.NetworkSettings.Networks["deployments_my_net"].IPAddress + "]")
+		// replaceList alternately contains the IP addresses and usernames of the peers
+		replaceList = append(replaceList, container.NetworkSettings.Networks["deployments_my_net"].IPAddress+"]")
 		var b strings.Builder
-		fmt.Fprintf(&b, "%-17s", username + "]")
+		fmt.Fprintf(&b, "%-17s", username+"]")
 		replaceList = append(replaceList, b.String())
-
+		// assign the username to the container
 		cli.ContainerRename(ctx, container.ID, username)
 		temp.containerID = container.ID
 		for _, port := range container.Ports {
@@ -200,48 +249,21 @@ func main() {
 
 		channelMap[username] = make(chan string, 100)
 	}
+	// create the replacer to print peers' usernames instead of IP addresses
 	r := strings.NewReplacer(replaceList...)
 
 	// establish connections with peers
 	for user := range peers {
-		go connectionHandler(peers[user], channelMap[user], delay)
+		go connectionHandler(peers[user], channelMap[user])
 	}
 
 	fmt.Println()
 	printLogs(cli, ctx, containers, r, "sequencer_service")
 	fmt.Println("\nNow you can send messages from each peer you want")
-	for {
-		fmt.Println("\n************* Allowed Actions *************")
-		fmt.Println("1) Send a message from a participant")
-		fmt.Println("2) View messages received by a participant")
-		fmt.Println("3) Quit")
 
-		fmt.Printf("\nSelect an option\n>> ")
-		scanner.Scan()
-		opt := scanner.Text()
-
-		if opt == "1" || opt == "2" {
-			for ok := false; !ok; {
-				fmt.Printf("\nEnter an existing username for a chat participant\n>> ")
-				scanner.Scan()
-				username = scanner.Text()
-				_, ok = peers[username]
-			}
-			if opt == "1" {
-				fmt.Printf("Insert a message\n>> ")
-				scanner = bufio.NewScanner(os.Stdin)
-				scanner.Scan()
-				channelMap[username] <- scanner.Text()
-			} else {
-				printLogs(cli, ctx, containers, r, peers[username].containerID)
-			}
-		} else if opt == "3" {
-			fmt.Println("\nGood bye!")
-			os.Exit(0)
-		} else {
-			fmt.Println("Invalid option!")
-			continue
-		}
-		fmt.Println()
+	if verbose {
+		verboseLoop(scanner, peers, channelMap, cli, ctx, containers, r)
+	} else {
+		simpleLoop(scanner, peers, channelMap)
 	}
 }

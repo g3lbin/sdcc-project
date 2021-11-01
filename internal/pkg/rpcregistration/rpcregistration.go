@@ -9,19 +9,19 @@ import (
 )
 
 type Registry struct {
-	FilePath string					// file to maintain the membership
-	MembersNum int
+	FilePath   string // file to maintain the membership
+	MembersNum int    // number of members
 }
 
-var fileLock sync.RWMutex			// RWMutex to synchronize the operations on the file
-var counterLock sync.RWMutex		// RWMutex to synchronize the accesses to members variable
-var members = 0						// number of registered members
+var fileLock sync.RWMutex    // RWMutex to synchronize the operations on the file
+var counterLock sync.RWMutex // RWMutex to synchronize the accesses to members variable
+var members = 0              // number of registered members
 
 // waitForAll does an active wait until all members are registered, then it returns the complete list of members
 func waitForAll(registry *Registry) []string {
 	var list []string
 
-	for {													// start active wait
+	for { // start active wait
 		counterLock.RLock()
 		if members == registry.MembersNum {
 			counterLock.RUnlock()
@@ -67,7 +67,7 @@ func (registry *Registry) RegisterMember(arg string, res *[]string) error {
 	}
 
 	writer := bufio.NewWriter(file)
-	_, err = writer.WriteString(string(arg) + "\n")		// add the new member to the membership
+	_, err = writer.WriteString(string(arg) + "\n") // add the new member to the membership
 	if err != nil {
 		utils.ErrorHandler("WriteString", err)
 	}
@@ -76,10 +76,10 @@ func (registry *Registry) RegisterMember(arg string, res *[]string) error {
 	fileLock.Unlock()
 
 	counterLock.Lock()
-	members++											// increment the number of registered members
+	members++ // increment the number of registered members
 	counterLock.Unlock()
 
-	*res = waitForAll(registry)							// put the member in wait for others and give him the membership
+	*res = waitForAll(registry) // put the member in wait for others and give him the membership
 
 	return nil
 }
