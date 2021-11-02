@@ -1,7 +1,7 @@
 FROM golang:1.16-alpine AS builder
 WORKDIR /app
 COPY . .
-RUN rm -rf ./cmd && go mod tidy && go mod download && go build -o sequencer ./internal/sequencer
+RUN rm -rf ./cmd ./test && go mod tidy && go mod download && go build -o sequencer ./internal/sequencer
 
 FROM alpine:latest
 WORKDIR /root/

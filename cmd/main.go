@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -26,6 +27,16 @@ func errorHandler(foo string, err error) {
 	log.Fatalf("%s has failed: %s", foo, err)
 }
 
+// clearScreen executes the "clear" command to clear the terminal
+func clearScreen() {
+	cmd := exec.Command("clear")
+	cmd.Stdout = os.Stdout
+	cmd.Run()
+}
+
+// connectionHandler establishes a connection with the specified peer p and starts an infinity loop in which:
+// 1. takes a message from the channel ch
+// 2. sends the message through the connection
 func connectionHandler(p peer, ch chan string) {
 	service := p.publicIP + ":" + strconv.Itoa(int(p.port))
 	conn, err := net.Dial("tcp", service)
@@ -43,6 +54,7 @@ func connectionHandler(p peer, ch chan string) {
 	}
 }
 
+// printLogs prints the log of the container identified by contID
 func printLogs(cli *client.Client, ctx context.Context, containers []types.Container, r *strings.Replacer, contID string) {
 	for _, container := range containers {
 		if container.ID != contID {
@@ -59,12 +71,13 @@ func printLogs(cli *client.Client, ctx context.Context, containers []types.Conta
 		if err != nil {
 			panic(err)
 		}
-		// check errors
-		fmt.Println(r.Replace(buf.String()))
+
+		fmt.Println(r.Replace(buf.String())) // replace the peer's IP address with its username
 		out.Close()
 	}
 }
 
+// parseCmdLine parses the arguments passed to the function and identifies any flags
 func parseCmdLine() bool {
 	verbose := false
 
@@ -87,6 +100,7 @@ func parseCmdLine() bool {
 	return verbose
 }
 
+// verboseLoop provides a menu to send messages and view logging information from each peer (verbose flag on)
 func verboseLoop(
 	scanner *bufio.Scanner,
 	peers map[string]peer,
@@ -135,6 +149,7 @@ func verboseLoop(
 	}
 }
 
+// simpleLoop allows sending messages from each communication participant (verbose flag off)
 func simpleLoop(scanner *bufio.Scanner, peers map[string]peer, channelMap map[string]chan string) {
 	var username string
 
@@ -190,6 +205,7 @@ func main() {
 		}
 		ok = contJson.State.Status != "exited"
 	}
+	clearScreen()
 	// assign a username to each peer
 	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
 	if err != nil {
@@ -224,7 +240,7 @@ func main() {
 			for i := 0; i < l/2; i++ {
 				if replaceList[2*i+1] == username {
 					ok = true
-					fmt.Println(("\nUsername already in use!"))
+					fmt.Println("\nUsername already in use!")
 					break
 				}
 			}
@@ -257,10 +273,7 @@ func main() {
 		go connectionHandler(peers[user], channelMap[user])
 	}
 
-	fmt.Println()
-	printLogs(cli, ctx, containers, r, "sequencer_service")
 	fmt.Println("\nNow you can send messages from each peer you want")
-
 	if verbose {
 		verboseLoop(scanner, peers, channelMap, cli, ctx, containers, r)
 	} else {

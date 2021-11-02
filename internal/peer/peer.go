@@ -199,10 +199,6 @@ func sendMessages(
 				time.Clock[0]++
 				time.Lock.Unlock()
 				peer.EnqueueMsg(algo, message, membersNum, 1) // put the message in the local queue
-				// update logical clock for 'receive' event
-				//time.Lock.Lock()
-				//time.Clock[0]++
-				//time.Lock.Unlock()
 			} else if algo == utils.ALGO3 {
 				message.Timestamp = make([]uint64, membersNum)
 				// update vector logical clock for 'send' event
