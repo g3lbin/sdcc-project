@@ -1,3 +1,7 @@
+/*
+This is a thin client which allows you to interact with the distributed system by controlling the operation
+of each participant in the multicast communication
+ */
 package main
 
 import (
@@ -185,15 +189,11 @@ func main() {
 	// create the scanner to read lines from stdin
 	scanner := bufio.NewScanner(os.Stdin)
 
-	//cmd := exec.Command("docker-compose", "-f", "deployments/docker-compose.yml", "up", "-d", "--build")
-	//cmd.Stdout = os.Stdout
-	//cmd.Stderr = os.Stderr
-	// cmd.Run()
-
+	// initialize a new API client
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		panic(err)
+		errorHandler("NewClientWithOpts", err)
 	}
 	// wait until the "registry" container has exited (so the peers' registration has completed)
 	fmt.Printf("Wait for initialization...\n")

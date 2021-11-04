@@ -30,6 +30,8 @@ type Time struct {
 	Lock  sync.Mutex
 }
 
+var doOnce sync.Once // execute a statement only first time (concurrency safe)
+
 // ErrorHandler allows to handle the errors according to the preferred policy
 func ErrorHandler(foo string, err error) {
 	log.Fatalf("%s has failed: %s", foo, err)
@@ -41,6 +43,11 @@ func RpcHandler(serviceAddress string, serviceMethod string, ch chan Message, de
 	var msg Message
 	var res int
 
+	// set the initial seed of the pseudo-random sequence (only the first time)
+	doOnce.Do(func() {
+		rand.Seed(t.Now().UnixNano())
+	})
+
 	client, err := rpc.Dial("tcp", serviceAddress)
 	if err != nil {
 		ErrorHandler("Dial", err)
@@ -50,7 +57,7 @@ func RpcHandler(serviceAddress string, serviceMethod string, ch chan Message, de
 		msg = <-ch
 		if delay > 0 {
 			r := rand.Intn(delay + 1)
-			t.Sleep(t.Duration(r) * t.Second)
+			t.Sleep(t.Duration(r) * t.Millisecond)
 		}
 		// call remote procedure
 		err = client.Call(serviceMethod, &msg, &res)

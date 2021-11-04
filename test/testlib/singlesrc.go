@@ -1,22 +1,23 @@
-package main
+package testlib
 
 import (
-	"fmt"
-	t "github.com/sdcc-project/test/testlib"
-	"strconv"
-	"strings"
-	"time"
+"fmt"
+"strconv"
+"strings"
+"time"
 )
 
-func main() {
-	var ds t.DockerStr
+// TestSingleSource tests the system in case there is only one participant which sends the multicast messages
+func TestSingleSource() {
+	var ds DockerStr
 	var r *strings.Replacer
-	var peers map[string]t.Peer
+	var peers map[string]Peer
 	var channelMap map[string]chan string // map to send messages to the connectionHandler of each peer
 
-	peers = make(map[string]t.Peer)
+	peers = make(map[string]Peer)
 	channelMap = make(map[string]chan string)
 
+	// list of multicast messages
 	messageList  := [10]string{
 		"0",
 		"1",
@@ -29,29 +30,26 @@ func main() {
 		"8",
 		"9",
 	}
-
-	peersNum := t.TestInit(&peers, &channelMap, &r, &ds)
-
+	// test initialization
+	peersNum := TestInit(&peers, &channelMap, &r, &ds)
 	// establish connections with peers
 	for user := range peers {
-		go t.ConnectionHandler(peers[user], channelMap[user])
+		go ConnectionHandler(peers[user], channelMap[user])
 	}
 
 	fmt.Println("Test started!")
-	// send the messages from all participants in parallel
-	for i, msg := range messageList {
-		user := "user" + strconv.Itoa(i % peersNum)
-		channelMap[user] <- msg
+	// send the messages from only one participant
+	for _, msg := range messageList {
+		channelMap["user0"] <- msg
 	}
-
 	fmt.Println("All messages have been sent, wait for propagation...")
-	time.Sleep(15*time.Second)
+	time.Sleep(3*time.Second)
 
 	fmt.Println("\nTest results:")
 	// print received messages from each participant
 	for i := 0; i < peersNum; i++ {
 		user := "user" + strconv.Itoa(i)
 		fmt.Println("\n************* "+user+" *************")
-		t.PrintLogs(ds.Cli, ds.Ctx, ds.Containers, r, peers[user].ContainerID)
+		PrintLogs(ds.Cli, ds.Ctx, ds.Containers, r, peers[user].ContainerID)
 	}
 }

@@ -28,6 +28,8 @@ type DockerStr struct {
 	Containers []types.Container
 }
 
+const DummyMsg = "Dummy message!"
+
 func ErrorHandler(foo string, err error) {
 	log.Fatalf("%s has failed: %s", foo, err)
 }
@@ -45,7 +47,6 @@ func PrintLogs(cli *client.Client, ctx context.Context, containers []types.Conta
 
 		buf := &bytes.Buffer{}
 		_, err = stdcopy.StdCopy(buf, nil, out)
-
 		if err != nil {
 			panic(err)
 		}
@@ -55,6 +56,7 @@ func PrintLogs(cli *client.Client, ctx context.Context, containers []types.Conta
 	}
 }
 
+// ConnectionHandler establishes a connection with the specified peer p to send the test messages
 func ConnectionHandler(p Peer, ch chan string) {
 	service := p.PublicIP + ":" + strconv.Itoa(int(p.Port))
 	conn, err := net.Dial("tcp", service)
@@ -78,6 +80,7 @@ func clearScreen() {
 	cmd.Run()
 }
 
+// TestInit waits for the system to be up and running to assign the usernames to the peers and to set up some structures
 func TestInit(
 	peers *map[string]Peer,
 	channelMap *map[string]chan string,
@@ -89,10 +92,11 @@ func TestInit(
 	var temp Peer
 	var err error
 
+	// initialize a new API client
 	(*dsAddr).Ctx = context.Background()
 	(*dsAddr).Cli, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		panic(err)
+		ErrorHandler("NewClientWithOpts", err)
 	}
 	// wait until the "registry" container has exited (so the peers' registration has completed)
 	fmt.Printf("Wait for initialization...\n")

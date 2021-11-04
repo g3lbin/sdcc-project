@@ -207,9 +207,8 @@ func sendMessages(
 				for i := 0; i < membersNum; i++ { // tag the message using the clock as timestamp
 					message.Timestamp[i] = time.Clock[i]
 				}
-				time.Lock.Unlock()
-
 				peer.VectDelivery(message, time, membersId) // deliver the message to the peer itself
+				time.Lock.Unlock()
 			}
 			// send the message to others
 			for i := 0; i < membersNum-1; i++ {
@@ -246,6 +245,9 @@ func getMessagesToSend(ch chan string, port string) {
 	reader := bufio.NewReader(conn)
 	for {
 		buffer, err = reader.ReadString('\n')
+		if err != nil {
+			utils.ErrorHandler("ReadString", err)
+		}
 		ch <- buffer
 	}
 }
