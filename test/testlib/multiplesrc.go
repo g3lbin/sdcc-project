@@ -54,11 +54,17 @@ func TestMultipleSourceTotOrdered() {
 	time.Sleep(3*time.Second)
 
 	fmt.Println("\nTest results:")
-	// print received messages from each participant
+	// print received messages from each participant and check the results
+	results := make([]string, peersNum)
 	for i := 0; i < peersNum; i++ {
 		user := "user" + strconv.Itoa(i)
 		fmt.Println("\n************* "+user+" *************")
-		PrintLogs(ds.Cli, ds.Ctx, ds.Containers, r, peers[user].ContainerID)
+		results[i] = PrintLogs(ds.Cli, ds.Ctx, ds.Containers, r, peers[user].ContainerID)
+	}
+	if isTestPassed(3, "multiple", results) {
+		fmt.Println("\nTest PASSED!")
+	} else {
+		fmt.Println("\nTest FAILED!")
 	}
 }
 
@@ -132,10 +138,16 @@ func TestMultipleSourceCausOrdered() {
 	time.Sleep(5*time.Second)
 
 	fmt.Println("\nTest results:")
-	// print received messages from each participant
+	// print received messages from each participant and check the results
+	results := make([]string, peersNum)
 	for i := 0; i < peersNum; i++ {
 		user := "user" + strconv.Itoa(i)
 		fmt.Println("\n************* "+user+" *************")
-		PrintLogs(ds.Cli, ds.Ctx, ds.Containers, r, peers[user].ContainerID)
+		results[i] = PrintLogs(ds.Cli, ds.Ctx, ds.Containers, r, peers[user].ContainerID)
+	}
+	if isTestPassed(3, "multiple", results) {
+		fmt.Println("\nTest PASSED!")
+	} else {
+		fmt.Println("\nTest FAILED!")
 	}
 }
