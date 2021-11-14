@@ -1,6 +1,9 @@
 ## LATEX ##
-# File di output
-*.pdf
+# File sorgenti
+*.tex
+
+# Immagini allegate
+*.png
 
 # File generati dalla compilazione
 *.aux
