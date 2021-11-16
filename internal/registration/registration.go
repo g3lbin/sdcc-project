@@ -13,8 +13,6 @@ import (
 	"github.com/sdcc-project/internal/pkg/utils"
 )
 
-var wg sync.WaitGroup
-
 type regEnv struct {
 	membersNum    int
 	listeningPort string
@@ -47,6 +45,24 @@ func setEnvironment(env *regEnv) {
 	}
 }
 
+// acceptn accepts connections on the listener and serves requests for n incoming connection.
+func acceptn(server *rpc.Server, lis net.Listener, n int) {
+	var wg sync.WaitGroup
+
+	wg.Add(n)                // create a waitgroup of requestNum members
+	for i := 0; i < n; i++ { // serve exactly requestNum requests
+		go func() {
+			conn, err := lis.Accept()
+			if err != nil {
+				utils.ErrorHandler("Accept", err)
+			}
+			server.ServeConn(conn)
+			wg.Done() // signal the end of the service
+		}()
+	}
+	wg.Wait() // wait for all connection and exit
+}
+
 func main() {
 	var requestsNum int
 	var err error
@@ -77,17 +93,6 @@ func main() {
 	}
 
 	fmt.Printf("Registration service on port %s...\n", env.listeningPort)
-	wg.Add(requestsNum)                // create a waitgroup of requestNum members
-	for i := 0; i < requestsNum; i++ { // serve exactly requestNum requests
-		go func() {
-			conn, err := lis.Accept()
-			if err != nil {
-				utils.ErrorHandler("Accept", err)
-			}
-			server.ServeConn(conn)
-			conn.Close()
-			wg.Done() // signal the end of the service
-		}()
-	}
-	wg.Wait() // wait for all connection and exit
+	acceptn(server, lis, requestsNum)
+	fmt.Printf("Registration completed! Exiting...")
 }
