@@ -1,6 +1,7 @@
 ## LATEX ##
 # File sorgenti
 *.tex
+*.sty
 
 # Immagini allegate
 *.png
