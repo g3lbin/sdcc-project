@@ -67,7 +67,7 @@ Per eseguire ciascun caso di test è necessario:
   ```
   go run ./test/test.go -algorithm <num> -source <type>
   ```
-  - `num` può assumere valore `1`, `2` o `3` a seconda dell'algoritmo specificato in `[.env](deployments/.env)`:
+  - `num` può assumere valore `1`, `2` o `3` a seconda dell'algoritmo specificato in [`.env`](deployments/.env):
 
     - `1` (centralized_totally_ordered_multicast)
     - `2` (decentralized_totally_ordered_multicast)
