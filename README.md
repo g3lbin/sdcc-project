@@ -67,12 +67,12 @@ Per eseguire ciascun caso di test è necessario:
   ```
   go run ./test/test.go -algorithm <num> -source <type>
   ```
-  - `num` può assumere valore `1`, `2` o `3` a seconda dell'algoritmo specificato in `deployments/.env`:
+  - `num` può assumere valore `1`, `2` o `3` a seconda dell'algoritmo specificato in `[.env](deployments/.env)`:
 
     - `1` (centralized_totally_ordered_multicast)
     - `2` (decentralized_totally_ordered_multicast)
     - `3` (causally_ordered_multicast)
-  - source può assumere valore `single` o `multiple` per specificare se uno o più peer possono inviare messaggi.
+  - `source` può assumere valore `single` o `multiple` per specificare se uno o più peer possono inviare messaggi.
 
 ## Documentazione
 Per avere maggiori informazioni riguardo il progetto, è possibile vedere la [relazione](docs/relazione.pdf) che ne riporta tutti i dettagli.
