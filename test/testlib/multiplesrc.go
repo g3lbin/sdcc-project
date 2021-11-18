@@ -51,7 +51,7 @@ func TestMultipleSourceTotOrdered() {
 	}
 
 	fmt.Println("All messages have been sent, wait for propagation...")
-	time.Sleep(3*time.Second)
+	time.Sleep(5*time.Second)
 
 	fmt.Println("\nTest results:")
 	// print received messages from each participant and check the results
@@ -61,7 +61,7 @@ func TestMultipleSourceTotOrdered() {
 		fmt.Println("\n************* "+user+" *************")
 		results[i] = PrintLogs(ds.Cli, ds.Ctx, ds.Containers, r, peers[user].ContainerID)
 	}
-	if isTestPassed(3, "multiple", results) {
+	if isTestPassed(2, "multiple", results) {
 		fmt.Println("\nTest PASSED!")
 	} else {
 		fmt.Println("\nTest FAILED!")
@@ -135,7 +135,7 @@ func TestMultipleSourceCausOrdered() {
 	}
 
 	fmt.Println("All messages have been sent, wait for propagation...")
-	time.Sleep(5*time.Second)
+	time.Sleep(10*time.Second)
 
 	fmt.Println("\nTest results:")
 	// print received messages from each participant and check the results
